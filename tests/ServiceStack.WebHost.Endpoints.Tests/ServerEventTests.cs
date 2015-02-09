@@ -8,6 +8,7 @@ using Funq;
 using NUnit.Framework;
 using ServiceStack.Auth;
 using ServiceStack.Configuration;
+using ServiceStack.Logging;
 using ServiceStack.Redis;
 using ServiceStack.Text;
 
@@ -148,12 +149,15 @@ namespace ServiceStack.WebHost.Endpoints.Tests
 
         public bool UseRedisServerEvents { get; set; }
         public bool LimitToAuthenticatedUsers { get; set; }
+        public Action<Web.IResponse, string> OnPublish { get; set; }
 
         public override void Configure(Container container)
         {
-            Plugins.Add(new ServerEventsFeature {
+            Plugins.Add(new ServerEventsFeature
+            {
                 HeartbeatInterval = TimeSpan.FromMilliseconds(200),
                 LimitToAuthenticatedUsers = LimitToAuthenticatedUsers,
+                OnPublish = OnPublish
             });
 
             if (UseRedisServerEvents)
@@ -168,7 +172,7 @@ namespace ServiceStack.WebHost.Endpoints.Tests
 
             if (LimitToAuthenticatedUsers)
             {
-                Plugins.Add(new AuthFeature(() => new AuthUserSession(), 
+                Plugins.Add(new AuthFeature(() => new AuthUserSession(),
                     new IAuthProvider[] {
                         new CustomCredentialsAuthProvider(), 
                     }));
@@ -181,6 +185,25 @@ namespace ServiceStack.WebHost.Endpoints.Tests
         public override bool TryAuthenticate(IServiceBase authService, string userName, string password)
         {
             return userName == "user" && password == "pass";
+        }
+    }
+
+
+    [TestFixture]
+    public class MemoryServerEventsWithNewlineOnPublishTests : ServerEventsTests
+    {
+        protected override ServiceStackHost CreateAppHost()
+        {
+            return new ServerEventsAppHost()
+            {
+                 
+                OnPublish = (res, msg) =>
+                {
+                    res.OutputStream.Write("\n\n\n\n\n\n\n\n\n\n");
+                }
+            }
+                .Init()
+                .Start(Config.AbsoluteBaseUri);
         }
     }
 
@@ -213,7 +236,7 @@ namespace ServiceStack.WebHost.Endpoints.Tests
 
         public ServerEventsTests()
         {
-            //LogManager.LogFactory = new ConsoleLogFactory();
+            //LogManager.LogFactory = new ConsoleLogFactory(debugEnabled: true);
             appHost = CreateAppHost();
         }
 
@@ -232,9 +255,9 @@ namespace ServiceStack.WebHost.Endpoints.Tests
             serverEvents.Reset();
         }
 
-        private static ServerEventsClient CreateServerEventsClient()
+        private static ServerEventsClient CreateServerEventsClient(params string[] channels)
         {
-            var client = new ServerEventsClient(Config.AbsoluteBaseUri);
+            var client = new ServerEventsClient(Config.AbsoluteBaseUri, channels);
             return client;
         }
 
@@ -266,6 +289,43 @@ namespace ServiceStack.WebHost.Endpoints.Tests
 
                 var joinMsg = (ServerEventJoin)await taskMsg.WaitAsync();
                 Assert.That(joinMsg.DisplayName, Is.EqualTo(client.ConnectionInfo.DisplayName));
+            }
+        }
+
+        [Test]
+        public async void Does_fire_onJoin_events_for_multiple_Channels()
+        {
+            var channels = new[] { "A", "B", "C" };
+            using (var client = CreateServerEventsClient(channels).Start())
+            {
+                var taskConnect = client.Connect();
+
+                var joinMsgs = new List<ServerEventJoin>();
+                var allJoinsReceived = new TaskCompletionSource<bool>();
+
+                client.OnCommand = msg =>
+                {
+                    var joinMsg = msg as ServerEventJoin;
+                    if (joinMsg != null)
+                    {
+                        joinMsgs.Add(joinMsg);
+                        if (joinMsgs.Count == channels.Length)
+                            allJoinsReceived.SetResult(true);
+                    }
+                };
+
+                var connectMsg = await taskConnect.WaitAsync();
+                Assert.That(connectMsg.HeartbeatUrl, Is.StringStarting(Config.AbsoluteBaseUri));
+
+                await allJoinsReceived.Task;
+
+                Assert.That(joinMsgs.Count, Is.EqualTo(channels.Length));
+                for (int i = 0; i < channels.Length; i++)
+                {
+                    var joinMsg = joinMsgs[i];
+                    Assert.That(joinMsg.Channel, Is.EqualTo(channels[i]));
+                    Assert.That(joinMsg.DisplayName, Is.EqualTo(client.ConnectionInfo.DisplayName));
+                }
             }
         }
 
@@ -737,21 +797,250 @@ namespace ServiceStack.WebHost.Endpoints.Tests
                 Assert.That(setterType.Name, Is.EqualTo("Bar"));
             }
         }
+
+        [Test]
+        public async Task Does_receive_messages_on_to_clients_subscribed_on_multiple_channels()
+        {
+            using (var clientA = CreateServerEventsClient("A"))
+            using (var clientAB = CreateServerEventsClient("A", "B"))
+            using (var clientABC = CreateServerEventsClient("A", "B", "C"))
+            using (var clientABCD = CreateServerEventsClient("A", "B", "C", "D"))
+            {
+                var msgsA = new List<ServerEventMessage>();
+                var msgsAB = new List<ServerEventMessage>();
+                var msgsABC = new List<ServerEventMessage>();
+                var msgsABCD = new List<ServerEventMessage>();
+
+                clientA.OnMessage = msgsA.Add;
+                clientAB.OnMessage = msgsAB.Add;
+                clientABC.OnMessage = msgsABC.Add;
+                clientABCD.OnMessage = msgsABCD.Add;
+
+                await Task.WhenAll(
+                    clientA.Connect(),
+                    clientAB.Connect(),
+                    clientABC.Connect(),
+                    clientABCD.Connect()
+                );
+
+                "Publishing Msg Batch #1 ...".Print();
+                clientA.PostChat("#1 hello to A", channel: "A");
+                clientA.PostChat("#2 hello to B", channel: "B");
+                clientA.PostChat("#3 hello to C", channel: "C");
+                clientA.PostChat("#4 hello to D", channel: "D");
+
+                await Task.Delay(1000);
+
+                "msgsA: {0}".Print(msgsA.Count);
+                "msgsAB: {0}".Print(msgsAB.Count);
+                "msgsABC: {0}".Print(msgsABC.Count);
+                "msgsABCD: {0}".Print(msgsABCD.Count);
+
+                Assert.That(msgsA.Count, Is.EqualTo(1));
+                Assert.That(msgsAB.Count, Is.EqualTo(2));
+                Assert.That(msgsABC.Count, Is.EqualTo(3));
+                Assert.That(msgsABCD.Count, Is.EqualTo(4));
+
+                await Task.Delay(1000);
+
+                "Publishing Msg Batch #2 ...".Print();
+                clientA.PostChat("#5 hello to A", channel: "A");
+                clientA.PostChat("#6 hello to B", channel: "B");
+                clientA.PostChat("#7 hello to C", channel: "C");
+                clientA.PostChat("#8 hello to D", channel: "D");
+
+                await Task.Delay(1000);
+
+                Assert.That(msgsA.Count, Is.EqualTo(2));
+                Assert.That(msgsAB.Count, Is.EqualTo(4));
+                Assert.That(msgsABC.Count, Is.EqualTo(6));
+                Assert.That(msgsABCD.Count, Is.EqualTo(8));
+            }
+        }
+
+        [Test]
+        public async Task Does_receive_all_join_and_leave_messages()
+        {
+            var joinA = new List<ServerEventJoin>();
+            var joinB = new List<ServerEventJoin>();
+            var joinAB = new List<ServerEventJoin>();
+
+            var leaveA = new List<ServerEventLeave>();
+            var leaveB = new List<ServerEventLeave>();
+            var leaveAB = new List<ServerEventLeave>();
+
+            using (var clientA = CreateServerEventsClient("A"))
+            using (var clientB = CreateServerEventsClient("B"))
+            using (var clientAB = CreateServerEventsClient("A", "B"))
+            {
+                var joinARecieved = new TaskCompletionSource<bool>();
+                var joinBRecieved = new TaskCompletionSource<bool>();
+                var joinABRecieved = new TaskCompletionSource<bool>();
+
+                clientA.OnCommand = e =>
+                {
+                    if (e is ServerEventJoin)
+                    {
+                        joinA.Add((ServerEventJoin)e);
+                        if (joinA.Count == 2)
+                            joinARecieved.SetResult(true);
+                    }
+                    else if (e is ServerEventLeave)
+                        leaveA.Add((ServerEventLeave)e);
+                };
+
+                clientB.OnCommand = e =>
+                {
+                    if (e is ServerEventJoin)
+                    {
+                        joinB.Add((ServerEventJoin)e);
+                        if (joinB.Count == 2)
+                            joinBRecieved.SetResult(true);
+                    }
+                    else if (e is ServerEventLeave)
+                        leaveB.Add((ServerEventLeave)e);
+                };
+
+                clientAB.OnCommand = e =>
+                {
+                    if (e is ServerEventJoin)
+                    {
+                        joinAB.Add((ServerEventJoin)e);
+                        if (joinAB.Count == 2)
+                            joinABRecieved.SetResult(true);
+                    }
+                    else if (e is ServerEventLeave)
+                        leaveAB.Add((ServerEventLeave)e);
+                };
+
+                await clientA.Connect();
+                await clientB.Connect();
+                await clientAB.Connect();
+
+                await Task.WhenAll(joinARecieved.Task, joinBRecieved.Task, joinABRecieved.Task);
+
+                Assert.That(joinA.Count, Is.EqualTo(2));  //A + [(A) B]
+                Assert.That(joinB.Count, Is.EqualTo(2));  //B + [A (B)]
+                Assert.That(joinAB.Count, Is.EqualTo(2)); //[(A) B] + [A (B)]
+
+                var usersA = clientA.ServiceClient.Get(new GetEventSubscribers { Channels = new[] { "A" } });
+                var usersB = clientA.ServiceClient.Get(new GetEventSubscribers { Channels = new[] { "B" } });
+                var usersAB = clientA.ServiceClient.Get(new GetEventSubscribers { Channels = new[] { "A", "B" } });
+
+                Assert.That(usersA.Count, Is.EqualTo(2));
+                Assert.That(usersB.Count, Is.EqualTo(2));
+                Assert.That(usersAB.Count, Is.EqualTo(3));
+
+                await clientAB.Stop();
+                await Task.Delay(100);
+
+                await clientB.Stop();
+                await clientA.Stop();
+
+                await Task.Delay(100);
+
+                Assert.That(leaveA.Count, Is.EqualTo(1));
+                Assert.That(leaveB.Count, Is.EqualTo(1));
+                Assert.That(leaveAB.Count, Is.EqualTo(0));
+            }
+        }
+
+        [Test]
+        public async Task MultiChannel_Does_receive_all_join_and_leave_messages()
+        {
+            var joinA = new List<ServerEventJoin>();
+            var joinB = new List<ServerEventJoin>();
+            var joinAB = new List<ServerEventJoin>();
+
+            var leaveA = new List<ServerEventLeave>();
+            var leaveB = new List<ServerEventLeave>();
+            var leaveAB = new List<ServerEventLeave>();
+
+            using (var clientAB = CreateServerEventsClient("A", "B"))
+            using (var clientA = CreateServerEventsClient("A"))
+            using (var clientB = CreateServerEventsClient("B"))
+            {
+                var joinARecieved = new TaskCompletionSource<bool>();
+                var joinBRecieved = new TaskCompletionSource<bool>();
+                var joinABRecieved = new TaskCompletionSource<bool>();
+
+                clientA.OnCommand = e =>
+                {
+                    if (e is ServerEventJoin)
+                    {
+                        joinA.Add((ServerEventJoin)e);
+                        if (joinA.Count == 1)
+                            joinARecieved.SetResult(true);
+                    }
+                    else if (e is ServerEventLeave)
+                        leaveA.Add((ServerEventLeave)e);
+                };
+
+                clientB.OnCommand = e =>
+                {
+                    if (e is ServerEventJoin)
+                    {
+                        joinB.Add((ServerEventJoin)e);
+                        if (joinB.Count == 1)
+                            joinBRecieved.SetResult(true);
+                    }
+                    else if (e is ServerEventLeave)
+                        leaveB.Add((ServerEventLeave)e);
+                };
+
+                clientAB.OnCommand = e =>
+                {
+                    if (e is ServerEventJoin)
+                    {
+                        joinAB.Add((ServerEventJoin)e);
+                        if (joinAB.Count == 4)
+                            joinABRecieved.SetResult(true);
+                    }
+                    else if (e is ServerEventLeave)
+                        leaveAB.Add((ServerEventLeave)e);
+                };
+
+                await clientAB.Connect();
+                await clientA.Connect();
+                await clientB.Connect();
+
+                await Task.WhenAll(joinARecieved.Task, joinBRecieved.Task, joinABRecieved.Task);
+
+                Assert.That(joinAB.Count, Is.EqualTo(4)); //[(A) B] + [A (B)] + A + B
+                Assert.That(joinA.Count, Is.EqualTo(1));  //A
+                Assert.That(joinB.Count, Is.EqualTo(1));  //B
+
+                await clientA.Stop();
+                await clientB.Stop();
+
+                await Task.Delay(100);
+                await clientAB.Stop();
+
+                Assert.That(leaveAB.Count, Is.EqualTo(2));
+                Assert.That(leaveA.Count, Is.EqualTo(0));
+                Assert.That(leaveB.Count, Is.EqualTo(0));
+            }
+        }
+    }
+
+    class Conf
+    {
+        public const string AbsoluteBaseUri = "http://macbook:10000/";
     }
 
     [TestFixture]
-    public class AuthMemoryServerEventsTests 
+    public class AuthMemoryServerEventsTests
     {
         protected virtual ServiceStackHost CreateAppHost()
         {
             return new ServerEventsAppHost { LimitToAuthenticatedUsers = true }
                 .Init()
-                .Start(Config.AbsoluteBaseUri);
+                .Start(Conf.AbsoluteBaseUri);
         }
 
         private static ServerEventsClient CreateServerEventsClient()
         {
-            var client = new ServerEventsClient(Config.AbsoluteBaseUri);
+            var client = new ServerEventsClient(Conf.AbsoluteBaseUri);
             return client;
         }
 
@@ -798,7 +1087,8 @@ namespace ServiceStack.WebHost.Endpoints.Tests
         {
             using (var client = CreateServerEventsClient())
             {
-                await client.AuthenticateAsync(new Authenticate {
+                await client.AuthenticateAsync(new Authenticate
+                {
                     provider = CustomCredentialsAuthProvider.Name,
                     UserName = "user",
                     Password = "pass",
@@ -807,7 +1097,7 @@ namespace ServiceStack.WebHost.Endpoints.Tests
                 await client.Connect();
 
                 ChatMessage chatMsg = null;
-                client.Handlers["chat"] = (c, msg) => 
+                client.Handlers["chat"] = (c, msg) =>
                 {
                     chatMsg = msg.Json.FromJson<ChatMessage>();
                 };
@@ -979,11 +1269,17 @@ namespace ServiceStack.WebHost.Endpoints.Tests
         public static void PostChat(this ServerEventsClient client,
             string message, string channel = null)
         {
-            client.ServiceClient.Post(new PostChatToChannel
+            client.ServiceClient.PostChat(client.SubscriptionId, message, channel);
+        }
+
+        public static void PostChat(this IServiceClient client, string subsciptionId,
+            string message, string channel = null)
+        {
+            client.Post(new PostChatToChannel
             {
-                From = client.SubscriptionId,
+                From = subsciptionId,
                 Message = message,
-                Channel = channel ?? EventSubscription.UnknownChannel,
+                Channel = channel ?? EventSubscription.UnknownChannel[0],
                 Selector = "cmd.chat",
             });
         }
@@ -994,7 +1290,7 @@ namespace ServiceStack.WebHost.Endpoints.Tests
             {
                 From = client.SubscriptionId,
                 Message = message,
-                Channel = channel ?? EventSubscription.UnknownChannel,
+                Channel = channel ?? EventSubscription.UnknownChannel[0],
                 Selector = selector,
             });
         }
@@ -1005,7 +1301,7 @@ namespace ServiceStack.WebHost.Endpoints.Tests
             client.ServiceClient.Post(new PostObjectToChannel
             {
                 CustomType = message,
-                Channel = channel ?? EventSubscription.UnknownChannel,
+                Channel = channel ?? EventSubscription.UnknownChannel[0],
                 Selector = selector,
             });
         }
@@ -1016,7 +1312,7 @@ namespace ServiceStack.WebHost.Endpoints.Tests
             client.ServiceClient.Post(new PostObjectToChannel
             {
                 SetterType = message,
-                Channel = channel ?? EventSubscription.UnknownChannel,
+                Channel = channel ?? EventSubscription.UnknownChannel[0],
                 Selector = selector,
             });
         }

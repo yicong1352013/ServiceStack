@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Configuration;
 using System.Net;
 using System.Web;
 using Check.ServiceInterface;
@@ -10,6 +11,7 @@ using ServiceStack;
 using ServiceStack.Api.Swagger;
 using ServiceStack.Data;
 using ServiceStack.MiniProfiler;
+using ServiceStack.MiniProfiler.Data;
 using ServiceStack.OrmLite;
 using ServiceStack.Razor;
 using ServiceStack.Text;
@@ -32,11 +34,12 @@ namespace CheckWeb
         /// <param name="container">The container.</param>
         public override void Configure(Container container)
         {
-            this.CustomErrorHttpHandlers[HttpStatusCode.NotFound] = null;
+            //this.CustomErrorHttpHandlers[HttpStatusCode.NotFound] = null;
 
             // Change ServiceStack configuration
             this.SetConfig(new HostConfig
             {
+                //UseHttpsLinks = true,
                 AppendUtf8CharsetOnContentTypes = new HashSet<string> { MimeTypes.Html },
 
                 // Set to return JSON if no request content type is defined
@@ -73,7 +76,7 @@ namespace CheckWeb
 
             Plugins.Add(new AutoQueryFeature());
             Plugins.Add(new PostmanFeature());
-
+            Plugins.Add(new CorsFeature());
 
             container.Register<IDbConnectionFactory>(
                 new OrmLiteConnectionFactory(":memory:", SqliteDialect.Provider));
@@ -84,13 +87,14 @@ namespace CheckWeb
                 db.InsertAll(SeedRockstars);
             }
 
-            //this.GlobalResponseFilters.Add((req, res, dto) =>
-            //{
-            //    if (req.ResponseContentType.Matches(MimeTypes.Json) && !(dto is IHttpResult))
-            //    {
-            //        res.Write(")]}',\n");
-            //    }
-            //});
+            var dbFactory = (OrmLiteConnectionFactory)container.Resolve<IDbConnectionFactory>();
+
+            dbFactory.RegisterConnection("SqlServer", 
+                new OrmLiteConnectionFactory(
+                    "Server={0};Database=test;User Id=test;Password=test;".Fmt(Environment.GetEnvironmentVariable("CI_HOST")),
+                    SqlServerDialect.Provider) {
+                        ConnectionFilter = x => new ProfiledDbConnection(x, Profiler.Current)
+                    });
         }
 
         public static Rockstar[] SeedRockstars = new[] {

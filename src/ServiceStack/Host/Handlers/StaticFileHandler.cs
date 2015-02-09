@@ -44,7 +44,7 @@ namespace ServiceStack.Host.Handlers
         private static readonly ILog log = LogManager.GetLogger(typeof(StaticFileHandler));
         public static int DefaultBufferSize = 1024 * 1024;
 
-        public static Action<IRequest, IResponse, IVirtualFile> ResponseFilter { get; set; } 
+        public static Action<IRequest, IResponse, IVirtualFile> ResponseFilter { get; set; }
 
         public StaticFileHandler()
         {
@@ -59,21 +59,22 @@ namespace ServiceStack.Host.Handlers
         }
 
         public int BufferSize { get; set; }
-        private DateTime DefaultFileModified { get; set; }
-        private string DefaultFilePath { get; set; }
-        private byte[] DefaultFileContents { get; set; }
+        private static DateTime DefaultFileModified { get; set; }
+        private static string DefaultFilePath { get; set; }
+        private static byte[] DefaultFileContents { get; set; }
+        public IVirtualNode VirtualNode { get; set; }
 
         /// <summary>
         /// Keep default file contents in-memory
         /// </summary>
         /// <param name="defaultFilePath"></param>
-        public void SetDefaultFile(string defaultFilePath, byte[] defaultFileContents, DateTime defaultFileModified)
+        public static void SetDefaultFile(string defaultFilePath, byte[] defaultFileContents, DateTime defaultFileModified)
         {
             try
             {
-                this.DefaultFilePath = defaultFilePath;
-                this.DefaultFileContents = defaultFileContents;
-                this.DefaultFileModified = defaultFileModified;
+                DefaultFilePath = defaultFilePath;
+                DefaultFileContents = defaultFileContents;
+                DefaultFileModified = defaultFileModified;
             }
             catch (Exception ex)
             {
@@ -88,7 +89,7 @@ namespace ServiceStack.Host.Handlers
 
             response.EndHttpHandlerRequest(skipClose: true, afterHeaders: r =>
             {
-                var node = request.GetVirtualNode();
+                var node = this.VirtualNode ?? request.GetVirtualNode();
                 var file = node as IVirtualFile;
                 if (file == null)
                 {
@@ -126,7 +127,9 @@ namespace ServiceStack.Host.Handlers
                         {
                             var msg = ErrorMessages.FileNotExistsFmt.Fmt(request.PathInfo);
                             log.WarnFormat("{0} in path: {1}", msg, originalFileName);
-                            throw HttpError.NotFound(msg);
+                            response.StatusCode = 404;
+                            response.StatusDescription = msg;
+                            return;
                         }
                     }
                 }
@@ -157,12 +160,12 @@ namespace ServiceStack.Host.Handlers
                             return;
                     }
 
-                    if (file.VirtualPath.EqualsIgnoreCase(this.DefaultFilePath))
+                    if (file.VirtualPath.EqualsIgnoreCase(DefaultFilePath))
                     {
-                        if (file.LastModified > this.DefaultFileModified)
-                            SetDefaultFile(this.DefaultFilePath, file.ReadAllBytes(), file.LastModified); //reload
+                        if (file.LastModified > DefaultFileModified)
+                            SetDefaultFile(DefaultFilePath, file.ReadAllBytes(), file.LastModified); //reload
 
-                        r.OutputStream.Write(this.DefaultFileContents, 0, this.DefaultFileContents.Length);
+                        r.OutputStream.Write(DefaultFileContents, 0, DefaultFileContents.Length);
                         r.Close();
                         return;
                     }

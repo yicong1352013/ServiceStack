@@ -196,12 +196,14 @@ namespace ServiceStack
 
         public static T GetPlugin<T>() where T : class, IPlugin
         {
-            return AssertAppHost().GetPlugin<T>();
+            var appHost = AppHost;
+            return appHost == null ? default(T) : appHost.GetPlugin<T>();
         }
 
         public static bool HasPlugin<T>() where T : class, IPlugin
         {
-            return AssertAppHost().HasPlugin<T>();
+            var appHost = AppHost;
+            return appHost != null && appHost.HasPlugin<T>();
         }
 
         public static string GetAppConfigPath()
@@ -329,7 +331,7 @@ namespace ServiceStack
         {
             var service = AssertAppHost().Container.Resolve<T>();
             if (service == null) return null;
-            service.Request = httpCtx != null ? httpCtx.ToRequest() : HttpContext.Current.ToRequest();
+            service.Request = httpCtx != null ? httpCtx.ToRequest() : GetCurrentRequest();
             return service;
         }
 
@@ -368,6 +370,11 @@ namespace ServiceStack
         public static void OnExceptionTypeFilter(Exception exception, ResponseStatus responseStatus)
         {
             AssertAppHost().OnExceptionTypeFilter(exception, responseStatus);
+        }
+
+        public static IRequest GetCurrentRequest()
+        {
+            return AssertAppHost().GetCurrentRequest();
         }
     }
 }

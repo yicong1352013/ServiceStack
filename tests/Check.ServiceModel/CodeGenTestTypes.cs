@@ -11,13 +11,16 @@ namespace Check.ServiceModel.Operations
     [Route("/hello/{Name}")]
     public class Hello
     {
+        [Required]
         public string Name { get; set; }
+        public string Title { get; set; }
     }
 
     public class HelloResponse
     {
         public string Result { get; set; }
     }
+
 
     public class HelloWithNestedClass : IReturn<HelloResponse>
     {
@@ -29,6 +32,39 @@ namespace Check.ServiceModel.Operations
         {
             public string Value { get; set; }
         }
+    }
+
+    public class ListResult
+    {
+        public string Result { get; set; }
+    }
+
+    public class ArrayResult
+    {
+        public string Result { get; set; }
+    }
+
+    public class HelloList : IReturn<List<ListResult>>
+    {
+        public List<string> Names { get; set; }
+    }
+
+    public class HelloArray : IReturn<ArrayResult[]>
+    {
+        public List<string> Names { get; set; }
+    }
+
+    public class HelloExisting : IReturn<HelloExistingResponse>
+    {
+        public List<string> Names { get; set; }
+    }
+
+    public class HelloExistingResponse
+    {
+        public HelloList HelloList { get; set; }
+        public HelloArray HelloArray { get; set; }
+        public ArrayResult[] ArrayResults { get; set; }
+        public List<ListResult> ListResults { get; set; }
     }
     
     public class HelloWithEnum
@@ -135,7 +171,7 @@ namespace Check.ServiceModel.Operations
         public string Name { get; set; }
     }
 
-    public class HelloVoid
+    public class HelloVoid : IReturnVoid
     {
         public string Name { get; set; }
     }
@@ -265,6 +301,9 @@ namespace Check.ServiceModel.Types
         public string String { get; set; }
         public DateTime DateTime { get; set; }
         public TimeSpan TimeSpan { get; set; }
+        public DateTimeOffset DateTimeOffset { get; set; }
+        public Guid Guid { get; set; }
+        public Char Char { get; set; }
         public DateTime? NullableDateTime { get; set; }
         public TimeSpan? NullableTimeSpan { get; set; }
         public List<string> StringList { get; set; }
@@ -284,6 +323,9 @@ namespace Check.ServiceModel.Types
 
         public Poco[] PocoArray { get; set; }
         public List<Poco> PocoList { get; set; }
+
+        public Dictionary<string, List<Poco>> PocoLookup { get; set; }
+        public Dictionary<string, List<Dictionary<string,Poco>>> PocoLookupMap { get; set; } 
     }
 
     public class Poco
@@ -291,7 +333,7 @@ namespace Check.ServiceModel.Types
         public string Name { get; set; }
     }
 
-    public class HelloBase
+    public abstract class HelloBase
     {
         public int Id { get; set; }
     }
@@ -326,11 +368,13 @@ namespace Check.ServiceModel.Types
         public AuthUserSession Result { get; set; }
     }
 
-    public class HelloInterface
+    public class HelloInterface : IGenericInterface<string>
     {
         public IPoco Poco { get; set; }
         public IEmptyInterface EmptyInterface { get; set; }
         public EmptyClass EmptyClass { get; set; }
+        public string Value { get; set; }
+        //public IGenericInterface<string> GenericInterface { get; set; }
     }
 
     public interface IPoco
@@ -340,4 +384,70 @@ namespace Check.ServiceModel.Types
 
     public interface IEmptyInterface {}
     public class EmptyClass {}
+
+    public interface IGenericInterface<T>
+    {
+        T Value { get; }
+    }
+
+    /// <summary>
+    /// Duplicate Types
+    /// </summary>
+    public class TypeB
+    {
+        public string Foo { get; set; }
+    }
+
+    public class TypeA
+    {
+        public List<TypeB> Bar { get; set; }
+    }
+
+    public class Request1 : IReturn<Request1Response>
+    {
+        public TypeA Test { get; set; }
+    }
+
+    public class Request1Response
+    {
+        public TypeA Test { get; set; }
+    }
+
+    public class Request2 : IReturn<Request2Response>
+    {
+        public TypeA Test { get; set; }
+    }
+
+    public class Request2Response
+    {
+        public TypeA Test { get; set; }
+    }
+
+    public class TypesGroup
+    {
+        public class InnerType
+        {
+            public long Id { get; set; }
+            public string Name { get; set; }
+        }
+
+        public enum InnerEnum
+        {
+            Foo,
+            Bar,
+            Baz
+        }
+    }
+
+    public class HelloInnerTypes : IReturn<HelloInnerTypesResponse> { }
+
+    public class HelloInnerTypesResponse
+    {
+        public TypesGroup.InnerType InnerType { get; set; }
+
+        public TypesGroup.InnerEnum InnerEnum { get; set; }
+    }
+
 }
+
+

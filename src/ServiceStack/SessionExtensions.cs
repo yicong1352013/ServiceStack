@@ -18,8 +18,17 @@ namespace ServiceStack
     /// </summary>
     public static class SessionExtensions
     {
+        public static string GetOrCreateSessionId(this IRequest httpReq)
+        {
+            var sessionId = httpReq.GetSessionId();
+            return sessionId ?? SessionFeature.CreateSessionIds(httpReq);
+        }
+
         public static string GetSessionId(this IRequest httpReq)
         {
+            if (httpReq == null)
+                httpReq = HostContext.GetCurrentRequest();
+
             var sessionOptions = GetSessionOptions(httpReq);
 
             return sessionOptions.Contains(SessionOptions.Permanent)
@@ -179,27 +188,14 @@ namespace ServiceStack
 
         public static string GetSessionKey(IRequest httpReq = null)
         {
-            var sessionId = SessionFeature.GetSessionId(httpReq);
+            var sessionId = httpReq.GetSessionId();
             return sessionId == null ? null : SessionFeature.GetSessionKey(sessionId);
         }
 
         public static TUserSession SessionAs<TUserSession>(this ICacheClient cache,
             IRequest httpReq = null, IResponse httpRes = null)
         {
-            var sessionKey = GetSessionKey(httpReq);
-
-            if (sessionKey != null)
-            {
-                var userSession = cache.Get<TUserSession>(sessionKey);
-                if (!Equals(userSession, default(TUserSession)))
-                    return userSession;
-            }
-
-            if (sessionKey == null)
-                SessionFeature.CreateSessionIds(httpReq, httpRes);
-
-            var unAuthorizedSession = (TUserSession)typeof(TUserSession).CreateInstance();
-            return unAuthorizedSession;
+            return SessionFeature.GetOrCreateSession<TUserSession>(cache, httpReq, httpRes);
         }
 
         public static IAuthSession GetUntypedSession(this ICacheClient cache,

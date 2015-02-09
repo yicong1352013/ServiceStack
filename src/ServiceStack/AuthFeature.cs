@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Configuration;
 using System.Linq;
 using ServiceStack.Auth;
-using ServiceStack.Web;
 
 namespace ServiceStack
 {
@@ -25,6 +23,10 @@ namespace ServiceStack
         public string HtmlRedirect { get; set; }
 
         public bool IncludeAuthMetadataProvider { get; set; }
+
+        public bool ValidateUniqueEmails { get; set; }
+
+        public bool ValidateUniqueUserNames { get; set; }
 
         public bool IncludeAssignRoleServices
         {
@@ -82,6 +84,7 @@ namespace ServiceStack
 
             this.HtmlRedirect = htmlRedirect ?? "~/" + localize(LocalizedStrings.Login);
             this.IncludeAuthMetadataProvider = true;
+            this.ValidateUniqueEmails = true;
         }
 
         public void Register(IAppHost appHost)

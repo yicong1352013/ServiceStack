@@ -38,5 +38,8 @@
         //Validation
         public static string RequestAlreadyProcessedFmt = "Request '{0}' has already been processed";
         
+        //Hosts
+        public static string OnlyAllowedInAspNetHosts = "Only ASP.NET Requests accessible via Singletons are supported";
+        public static string HostDoesNotSupportSingletonRequest = "This AppHost does not support accessing the current Request via a Singleton";
     }
 }

@@ -367,7 +367,10 @@ namespace ServiceStack.Host
                 {
                     var type = FindMetadataType(metadataTypes, p.Type, p.TypeNamespace);
                     if (type != null && !types.Contains(type))
+                    {
                         types.Add(type);
+                        AddReferencedTypes(type, metadataTypes, types);
+                    }
 
                     if (!p.GenericArgs.IsEmpty())
                     {
@@ -375,7 +378,10 @@ namespace ServiceStack.Host
                         {
                             type = FindMetadataType(metadataTypes, arg);
                             if (type != null && !types.Contains(type))
-                                types.Add(type);     
+                            {
+                                types.Add(type);
+                                AddReferencedTypes(type, metadataTypes, types);
+                            }
                         }
                     }
                     else if (p.IsArray())
@@ -383,7 +389,10 @@ namespace ServiceStack.Host
                         var elType = p.Type.SplitOnFirst('[')[0];
                         type = FindMetadataType(metadataTypes, elType);
                         if (type != null && !types.Contains(type))
+                        {
                             types.Add(type);
+                            AddReferencedTypes(type, metadataTypes, types);
+                        }
                     }
                 }
             }
@@ -612,12 +621,18 @@ namespace ServiceStack.Host
 
         public static bool IsArray(this MetadataPropertyType prop)
         {
-            return prop.Type.SplitOnFirst('[').Length > 1;
+            return prop.Type.IndexOf('[') >= 0;
         }
 
         public static bool IsInterface(this MetadataType type)
         {
-            return type.IsInterface.GetValueOrDefault();
+            return type != null && type.IsInterface.GetValueOrDefault();
+        }
+
+        public static bool IsAbstract(this MetadataType type)
+        {
+            return type.IsAbstract.GetValueOrDefault()
+                || type.Name == typeof(AuthUserSession).Name; //not abstract but treat it as so
         }
     }
 }

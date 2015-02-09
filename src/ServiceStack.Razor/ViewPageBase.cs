@@ -376,6 +376,11 @@ namespace ServiceStack.Razor
             return this.AppHost.TryResolve<T>();
         }
 
+        public virtual T GetPlugin<T>() where T : class, IPlugin
+        {
+            return this.AppHost.GetPlugin<T>();
+        }
+
         public virtual T TryResolve<T>()
         {
             return this.AppHost.TryResolve<T>();
@@ -411,7 +416,7 @@ namespace ServiceStack.Razor
         private ICacheClient cache;
         public ICacheClient Cache
         {
-            get { return cache ?? (cache = Get<ICacheClient>()); }
+            get { return cache ?? (cache = AppHost.GetCacheClient()); }
         }
 
         private IDbConnection db;

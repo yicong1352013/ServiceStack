@@ -73,10 +73,10 @@ namespace ServiceStack
                 IgnoreFormatsInMetadata = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                 AllowFileExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
-                    "js", "ts", "css", "htm", "html", "shtm", "txt", "xml", "rss", "csv", "pdf",  
+                    "js", "ts", "jsx", "css", "htm", "html", "shtm", "txt", "xml", "rss", "csv", "pdf",  
                     "jpg", "jpeg", "gif", "png", "bmp", "ico", "tif", "tiff", "svg",
                     "avi", "divx", "m3u", "mov", "mp3", "mpeg", "mpg", "qt", "vob", "wav", "wma", "wmv", 
-                    "flv", "swf", "xap", "xaml", "ogg", "mp4", "webm", "eot", "ttf", "woff", "map"
+                    "flv", "swf", "xap", "xaml", "ogg", "mp4", "webm", "eot", "ttf", "woff", "woff2", "map"
                 },
                 DebugAspNetHostEnvironment = Env.IsMono ? "FastCGI" : "IIS7",
                 DebugHttpListenerHostEnvironment = Env.IsMono ? "XSP" : "WebServer20",
@@ -106,11 +106,14 @@ namespace ServiceStack
                 Return204NoContentForEmptyResponse = true,
                 AllowPartialResponses = true,
                 AllowAclUrlReservation = true,
+                AddRedirectParamsToQueryString = false,
                 RedirectToDefaultDocuments = false,
                 StripApplicationVirtualPath = false,
                 ScanSkipPaths = new List<string> {
                     "/obj/", 
                     "/bin/",
+                    "/node_modules/",
+                    "/bower_components/",
                 },
                 IgnoreWarningsOnPropertyNames = new List<string> {
                     "format", "callback", "debug", "_", "authsecret", "Version", "version"
@@ -180,6 +183,7 @@ namespace ServiceStack
             this.IgnoreWarningsOnPropertyNames = instance.IgnoreWarningsOnPropertyNames;
             this.FallbackRestPath = instance.FallbackRestPath;
             this.AllowAclUrlReservation = instance.AllowAclUrlReservation;
+            this.AddRedirectParamsToQueryString = instance.AddRedirectParamsToQueryString;
             this.RedirectToDefaultDocuments = instance.RedirectToDefaultDocuments;
             this.StripApplicationVirtualPath = instance.StripApplicationVirtualPath;
             this.ScanSkipPaths = instance.ScanSkipPaths;
@@ -254,6 +258,7 @@ namespace ServiceStack
         public bool AllowPartialResponses { get; set; }
         public bool AllowNonHttpOnlyCookies { get; set; }
         public bool AllowAclUrlReservation { get; set; }
+        public bool AddRedirectParamsToQueryString { get; set; }
         public bool RedirectToDefaultDocuments { get; set; }
         public bool StripApplicationVirtualPath { get; set; }
 

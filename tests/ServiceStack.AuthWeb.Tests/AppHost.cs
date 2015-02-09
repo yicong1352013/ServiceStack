@@ -79,6 +79,7 @@ namespace ServiceStack.AuthWeb.Tests
 
             SetConfig(new HostConfig {
                 DebugMode = true,
+                AddRedirectParamsToQueryString = true,
             });
         }
 
@@ -125,6 +126,7 @@ namespace ServiceStack.AuthWeb.Tests
 
             var authRepo = CreateOrmLiteAuthRepo(container, appSettings);
             //var authRepo = CreateRavenDbAuthRepo(container, appSettings);
+            //AuthProvider.ValidateUniqueUserNames = false;
 
             try
             {
@@ -136,6 +138,16 @@ namespace ServiceStack.AuthWeb.Tests
                     LastName = "Last",
                     FullName = "First Last",
                     Email = "demis.bellot@gmail.com",
+                }, "test");
+
+                authRepo.CreateUserAuth(new CustomUserAuth
+                {
+                    Custom = "CustomUserAuth",
+                    DisplayName = "Credentials",
+                    FirstName = "First",
+                    LastName = "Last",
+                    FullName = "First Last",
+                    UserName = "mythz",
                 }, "test");
             }
             catch (Exception ignoreExistingUser) {}
@@ -262,9 +274,15 @@ namespace ServiceStack.AuthWeb.Tests
 
     public class CustomUserSession : AuthUserSession
     {
-        public override void OnAuthenticated(IServiceBase authService, IAuthSession session, IAuthTokens tokens, System.Collections.Generic.Dictionary<string, string> authInfo)
+        public override void OnAuthenticated(IServiceBase authService, IAuthSession session, IAuthTokens tokens, Dictionary<string, string> authInfo)
         {
-            "OnAuthenticated()".Print();
+            var jsv = authService.Request.Dto.Dump();
+            "OnAuthenticated(): {0}".Print(jsv);
+        }
+
+        public override void OnRegistered(IRequest httpReq, IAuthSession session, IServiceBase service)
+        {
+            "OnRegistered()".Print();
         }
     }
 

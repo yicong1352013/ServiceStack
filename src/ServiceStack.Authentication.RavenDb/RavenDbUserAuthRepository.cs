@@ -12,7 +12,7 @@ namespace ServiceStack.Authentication.RavenDb
 {
     public class RavenDbUserAuthRepository : RavenDbUserAuthRepository<UserAuth, UserAuthDetails>, IUserAuthRepository
     {
-        public RavenDbUserAuthRepository(IDocumentStore documentStore) : base(documentStore) {}
+        public RavenDbUserAuthRepository(IDocumentStore documentStore) : base(documentStore) { }
     }
 
     public class RavenDbUserAuthRepository<TUserAuth, TUserAuthDetails> : IUserAuthRepository
@@ -193,6 +193,9 @@ namespace ServiceStack.Authentication.RavenDb
 
         public IUserAuth GetUserAuthByUserName(string userNameOrEmail)
         {
+            if (userNameOrEmail == null)
+                return null;
+
             using (var session = documentStore.OpenSession())
             {
                 var userAuth = session.Query<UserAuth_By_UserNameOrEmail.Result, UserAuth_By_UserNameOrEmail>()
@@ -353,29 +356,29 @@ namespace ServiceStack.Authentication.RavenDb
             }
         }
 
-        public string CreateOrMergeAuthSession(IAuthSession authSession, IAuthTokens tokens)
+        public IUserAuthDetails CreateOrMergeAuthSession(IAuthSession authSession, IAuthTokens tokens)
         {
             var userAuth = GetUserAuth(authSession, tokens)
                 ?? typeof(TUserAuth).CreateInstance<TUserAuth>();
 
             using (var session = documentStore.OpenSession())
             {
-                var oAuthProvider = session
+                var authDetails = session
                     .Query<UserAuth_By_UserAuthDetails.Result, UserAuth_By_UserAuthDetails>()
                     .Customize(x => x.WaitForNonStaleResultsAsOfNow())
                     .Where(q => q.Provider == tokens.Provider && q.UserId == tokens.UserId)
                     .OfType<TUserAuthDetails>()
                     .FirstOrDefault();
 
-                if (oAuthProvider == null)
+                if (authDetails == null)
                 {
-                    oAuthProvider = typeof(TUserAuthDetails).CreateInstance<TUserAuthDetails>();
-                    oAuthProvider.Provider = tokens.Provider;
-                    oAuthProvider.UserId = tokens.UserId;
+                    authDetails = typeof(TUserAuthDetails).CreateInstance<TUserAuthDetails>();
+                    authDetails.Provider = tokens.Provider;
+                    authDetails.UserId = tokens.UserId;
                 }
 
-                oAuthProvider.PopulateMissing(tokens);
-                userAuth.PopulateMissingExtended(oAuthProvider);
+                authDetails.PopulateMissing(tokens);
+                userAuth.PopulateMissingExtended(authDetails);
 
                 userAuth.ModifiedDate = DateTime.UtcNow;
                 if (userAuth.CreatedDate == default(DateTime))
@@ -384,16 +387,16 @@ namespace ServiceStack.Authentication.RavenDb
                 session.Store(userAuth);
                 session.SaveChanges();
 
-                oAuthProvider.UserAuthId = userAuth.Id;
+                authDetails.UserAuthId = userAuth.Id;
 
-                if (oAuthProvider.CreatedDate == default(DateTime))
-                    oAuthProvider.CreatedDate = userAuth.ModifiedDate;
-                oAuthProvider.ModifiedDate = userAuth.ModifiedDate;
+                if (authDetails.CreatedDate == default(DateTime))
+                    authDetails.CreatedDate = userAuth.ModifiedDate;
+                authDetails.ModifiedDate = userAuth.ModifiedDate;
 
-                session.Store(oAuthProvider);
+                session.Store(authDetails);
                 session.SaveChanges();
 
-                return oAuthProvider.UserAuthId.ToString(CultureInfo.InvariantCulture);
+                return authDetails;
             }
         }
     }

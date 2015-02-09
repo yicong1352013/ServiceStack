@@ -15,85 +15,6 @@ namespace ServiceStack
             MetadataTypesConfig = new MetadataTypesConfig
             {
                 AddDefaultXmlNamespace = HostConfig.DefaultWsdlNamespace,
-                CSharpTypeAlias = new Dictionary<string, string> 
-                {
-                    { "String", "string" },    
-                    { "Boolean", "bool" },    
-                    { "Byte", "byte" },    
-                    { "Int16", "short" },    
-                    { "Int32", "int" },    
-                    { "Int64", "long" },    
-                    { "UInt16", "ushort" },    
-                    { "UInt32", "uint" },    
-                    { "UInt64", "ulong" },    
-                    { "Single", "float" },    
-                    { "Double", "double" },    
-                    { "Decimal", "decimal" },    
-                },
-                FSharpTypeAlias = new Dictionary<string, string>
-                {
-                },
-                VbNetTypeAlias = new Dictionary<string, string>
-                {
-                    { "Int16", "Short" },    
-                    { "Int32", "Integer" },    
-                    { "Int64", "Long" },    
-                    { "DateTime", "Date" },    
-                },
-                TypeScriptTypeAlias = new Dictionary<string, string>
-                {
-                    { "String", "string" },    
-                    { "Boolean", "boolean" },    
-                    { "DateTime", "string" },    
-                    { "TimeSpan", "string" },    
-                    { "Byte", "number" },    
-                    { "Int16", "number" },    
-                    { "Int32", "number" },    
-                    { "Int64", "number" },    
-                    { "UInt16", "number" },    
-                    { "UInt32", "number" },    
-                    { "UInt64", "number" },    
-                    { "Single", "number" },    
-                    { "Double", "number" },    
-                    { "Decimal", "number" },    
-                },
-                VbNetKeyWords = new HashSet<string>
-                {
-                    "Default",
-                    "Dim",
-                    "Catch",
-                    "Byte",
-                    "Short",
-                    "Integer",
-                    "Long",
-                    "UShort",
-                    "ULong",
-                    "Double",
-                    "Decimal",
-                    "String",
-                    "Object",
-                    "Each",
-                    "Error",
-                    "Finally",
-                    "Function",
-                    "Global",
-                    "If",
-                    "Imports",
-                    "Inherits",
-                    "Not",
-                    "IsNot",
-                    "Module",
-                    "MyBase",
-                    "Option",
-                    "Out",
-                    "Protected",
-                    "Return",
-                    "Shadows",
-                    "Static",
-                    "Then",
-                    "With",
-                    "When",
-                },
                 ExportAttributes = new HashSet<Type>
                 {
                     typeof(FlagsAttribute),
@@ -116,6 +37,15 @@ namespace ServiceStack
                 {
                     "ServiceStack",    
                     "ServiceStack.Auth",
+                    "ServiceStack.Caching",
+                    "ServiceStack.Configuration",
+                    "ServiceStack.Data",
+                    "ServiceStack.IO",
+                    "ServiceStack.Logging",
+                    "ServiceStack.Messaging",
+                    "ServiceStack.Model",
+                    "ServiceStack.Redis",
+                    "ServiceStack.Web",
                     "ServiceStack.Admin",
                     "ServiceStack.NativeTypes",    
                     "ServiceStack.Api.Swagger",    
@@ -128,7 +58,14 @@ namespace ServiceStack
                     "System.Runtime.Serialization",
                     "ServiceStack",
                     "ServiceStack.DataAnnotations",
-                }
+                },
+                DefaultTypeScriptNamespaces = new List<string>
+                {
+                },
+                DefaultSwiftNamespaces = new List<string>
+                {
+                    "Foundation",    
+                },
             };
         }
 

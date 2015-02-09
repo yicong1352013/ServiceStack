@@ -15,8 +15,11 @@ namespace ServiceStack
             bool addDataContractAttributes = false,
             bool addIndexesToDataMembers = false,
             string addDefaultXmlNamespace = null,
+            string baseClass = null,
             bool addResponseStatus = false,
             bool addServiceStackTypes = true,
+            bool addModelExtensions = true,
+            bool makePropertiesOptional = true,
             bool makeDataContractsExtensible = false,
             bool initializeCollections = true,
             int? addImplicitVersion = null)
@@ -28,17 +31,21 @@ namespace ServiceStack
             AddDescriptionAsComments = convertDescriptionToComments;
             AddDataContractAttributes = addDataContractAttributes;
             AddDefaultXmlNamespace = addDefaultXmlNamespace;
+            BaseClass = baseClass;
             MakeDataContractsExtensible = makeDataContractsExtensible;
             AddIndexesToDataMembers = addIndexesToDataMembers;
             InitializeCollections = initializeCollections;
             AddResponseStatus = addResponseStatus;
             AddServiceStackTypes = addServiceStackTypes;
+            AddModelExtensions = addModelExtensions;
+            MakePropertiesOptional = makePropertiesOptional;
             AddImplicitVersion = addImplicitVersion;
         }
 
         public string BaseUrl { get; set; }
         public bool MakePartial { get; set; }
         public bool MakeVirtual { get; set; }
+        public string BaseClass { get; set; }
         public bool AddReturnMarker { get; set; }
         public bool AddDescriptionAsComments { get; set; }
         public bool AddDataContractAttributes { get; set; }
@@ -46,18 +53,19 @@ namespace ServiceStack
         public int? AddImplicitVersion { get; set; }
         public bool AddResponseStatus { get; set; }
         public bool AddServiceStackTypes { get; set; }
+        public bool AddModelExtensions { get; set; }
+        public bool MakePropertiesOptional { get; set; }
         public string AddDefaultXmlNamespace { get; set; }
         public bool MakeDataContractsExtensible { get; set; }
         public bool InitializeCollections { get; set; }
         public List<string> DefaultNamespaces { get; set; }
+        public List<string> DefaultTypeScriptNamespaces { get; set; }
+        public List<string> DefaultSwiftNamespaces { get; set; }
+        public List<string> IncludeTypes { get; set; }
+        public List<string> ExcludeTypes { get; set; }
 
         public string GlobalNamespace { get; set; }
 
-        public Dictionary<string, string> CSharpTypeAlias { get; set; }
-        public Dictionary<string, string> FSharpTypeAlias { get; set; }
-        public Dictionary<string, string> VbNetTypeAlias { get; set; }
-        public Dictionary<string, string> TypeScriptTypeAlias { get; set; }
-        public HashSet<string> VbNetKeyWords { get; set; }
         public HashSet<Type> IgnoreTypes { get; set; }
         public HashSet<Type> ExportAttributes { get; set; }
         public List<string> IgnoreTypesInNamespaces { get; set; }
@@ -70,11 +78,13 @@ namespace ServiceStack
         {
             Types = new List<MetadataType>();
             Operations = new List<MetadataOperationType>();
+            Namespaces = new List<string>();
             Version = 1;
         }
 
         public int Version { get; set; }
         public MetadataTypesConfig Config { get; set; }
+        public List<string> Namespaces { get; set; }
         public List<MetadataType> Types { get; set; }
         public List<MetadataOperationType> Operations { get; set; }
     }
@@ -98,6 +108,7 @@ namespace ServiceStack
         public bool? IsNested { get; set; }
         public bool? IsEnum { get; set; }
         public bool? IsInterface { get; set; }
+        public bool? IsAbstract { get; set; }
 
         public MetadataTypeName ReturnMarkerTypeName { get; set; }
 

@@ -17,6 +17,10 @@ namespace ServiceStack.NativeTypes.FSharp
             Config = config;
         }
 
+        public static Dictionary<string, string> TypeAliases = new Dictionary<string, string> 
+        {
+        };
+
         class CreateTypeOptions
         {
             public Func<string> ImplementsFn { get; set; }
@@ -28,10 +32,10 @@ namespace ServiceStack.NativeTypes.FSharp
 
         public string GetCode(MetadataTypes metadata, IRequest request)
         {
-            var namespaces = new HashSet<string>();
-            Config.DefaultNamespaces.Each(x => namespaces.Add(x));
+            var namespaces = Config.GetDefaultNamespaces(metadata);
 
             var typeNamespaces = new HashSet<string>();
+            metadata.RemoveIgnoredTypes(Config);
             metadata.Types.Each(x => typeNamespaces.Add(x.Namespace));
             metadata.Operations.Each(x => typeNamespaces.Add(x.Request.Namespace));
 
@@ -58,6 +62,8 @@ namespace ServiceStack.NativeTypes.FSharp
             sb.AppendLine("{0}AddIndexesToDataMembers: {1}".Fmt(defaultValue("AddIndexesToDataMembers"), Config.AddIndexesToDataMembers));
             sb.AppendLine("{0}AddResponseStatus: {1}".Fmt(defaultValue("AddResponseStatus"), Config.AddResponseStatus));
             sb.AppendLine("{0}AddImplicitVersion: {1}".Fmt(defaultValue("AddImplicitVersion"), Config.AddImplicitVersion));
+            sb.AppendLine("{0}IncludeTypes: {1}".Fmt(defaultValue("IncludeTypes"), Config.IncludeTypes.Safe().ToArray().Join(",")));
+            sb.AppendLine("{0}ExcludeTypes: {1}".Fmt(defaultValue("ExcludeTypes"), Config.ExcludeTypes.Safe().ToArray().Join(",")));
             sb.AppendLine("{0}InitializeCollections: {1}".Fmt(defaultValue("InitializeCollections"), Config.InitializeCollections));
             //sb.AppendLine("{0}AddDefaultXmlNamespace: {1}".Fmt(defaultValue("AddDefaultXmlNamespace"), Config.AddDefaultXmlNamespace));
             //sb.AppendLine("{0}DefaultNamespaces: {1}".Fmt(defaultValue("DefaultNamespaces"), Config.DefaultNamespaces.ToArray().Join(", ")));
@@ -83,7 +89,7 @@ namespace ServiceStack.NativeTypes.FSharp
 
             string lastNS = null;
 
-            var existingOps = new HashSet<string>();
+            var existingTypes = new HashSet<string>();
 
             var requestTypes = metadata.Operations.Select(x => x.Request).ToHashSet();
             var requestTypesMap = metadata.Operations.ToSafeDictionary(x => x.Request);
@@ -111,7 +117,7 @@ namespace ServiceStack.NativeTypes.FSharp
                 var fullTypeName = type.GetFullName();
                 if (requestTypes.Contains(type))
                 {
-                    if (!existingOps.Contains(fullTypeName))
+                    if (!existingTypes.Contains(fullTypeName))
                     {
                         MetadataType response = null;
                         MetadataOperationType operation;
@@ -135,18 +141,18 @@ namespace ServiceStack.NativeTypes.FSharp
                                     if (type.ReturnMarkerTypeName != null)
                                         return Type("IReturn`1", new[] { Type(type.ReturnMarkerTypeName) });
                                     return response != null
-                                        ? Type("IReturn`1", new[] { Type(type.Name, type.GenericArgs) })
+                                        ? Type("IReturn`1", new[] { Type(response.Name, response.GenericArgs) })
                                         : null;
                                 },
                                 IsRequest = true,
                             });
 
-                        existingOps.Add(fullTypeName);
+                        existingTypes.Add(fullTypeName);
                     }
                 }
                 else if (responseTypes.Contains(type))
                 {
-                    if (!existingOps.Contains(fullTypeName)
+                    if (!existingTypes.Contains(fullTypeName)
                         && !Config.IgnoreTypesInNamespaces.Contains(type.Namespace))
                     {
                         lastNS = AppendType(ref sb, type, lastNS,
@@ -155,13 +161,15 @@ namespace ServiceStack.NativeTypes.FSharp
                                 IsResponse = true,
                             });
 
-                        existingOps.Add(fullTypeName);
+                        existingTypes.Add(fullTypeName);
                     }
                 }
-                else if (types.Contains(type) && !existingOps.Contains(fullTypeName))
+                else if (types.Contains(type) && !existingTypes.Contains(fullTypeName))
                 {
                     lastNS = AppendType(ref sb, type, lastNS,
                         new CreateTypeOptions { IsType = true });
+
+                    existingTypes.Add(fullTypeName);
                 }
             }
 
@@ -173,9 +181,6 @@ namespace ServiceStack.NativeTypes.FSharp
         private string AppendType(ref StringBuilderWrapper sb, MetadataType type, string lastNS,
             CreateTypeOptions options)
         {
-            if (type == null || (type.Namespace != null && type.Namespace.StartsWith("System")))
-                return lastNS;
-
             sb = sb.Indent();
 
             sb.AppendLine();
@@ -415,7 +420,7 @@ namespace ServiceStack.NativeTypes.FSharp
                 return "{0}[]".Fmt(TypeAlias(arrParts[0]));
 
             string typeAlias;
-            Config.FSharpTypeAlias.TryGetValue(type, out typeAlias);
+            TypeAliases.TryGetValue(type, out typeAlias);
 
             return typeAlias ?? NameOnly(type);
         }
