@@ -35,5 +35,16 @@ namespace Check.ServiceInterface
                 }
             };
         }
+
+        public object Any(MetadataRequest request)
+        {
+            return request;
+        }
     }
+
+    public class MetadataRequest : IReturn<AutoQueryMetadataResponse>
+    {
+        public MetadataType MetadataType { get; set; }
+    }
+
 }

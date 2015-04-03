@@ -249,16 +249,32 @@ namespace ServiceStack.Authentication.RavenDb
 
         private void LoadUserAuth(IAuthSession session, TUserAuth userAuth)
         {
-            if (userAuth == null) return;
+            session.PopulateSession(userAuth,
+                GetUserAuthDetails(session.UserAuthId).ConvertAll(x => (IAuthTokens)x));
+        }
 
-            var idSesije = session.Id;  //first record session Id (original session Id)
-            session.PopulateWith(userAuth); //here, original sessionId is overwritten with facebook user Id
-            session.Id = idSesije;  //we return Id of original session here
+        public void DeleteUserAuth(string userAuthId)
+        {
+            using (var session = documentStore.OpenSession())
+            {
+                int userId;
+                if (int.TryParse(userAuthId, out userId))
+                {
+                    var userAuth = session.Load<TUserAuth>(userId);
+                    session.Delete(userAuth);
 
-            session.UserAuthId = userAuth.Id.ToString(CultureInfo.InvariantCulture);
-            session.ProviderOAuthAccess = GetUserAuthDetails(session.UserAuthId)
-                .ConvertAll(x => (IAuthTokens)x);
+                    var userAuthDetails = session.Query<UserAuth_By_UserAuthDetails.Result, UserAuth_By_UserAuthDetails>()
+                        .Customize(x => x.WaitForNonStaleResultsAsOfNow())
+                        .Where(q => q.UserAuthId == userId);
 
+                    userAuthDetails.Each(session.Delete);
+                }
+                else
+                {
+                    var userAuth = session.Load<TUserAuth>(userAuthId);
+                    session.Delete(userAuth);
+                }
+            }
         }
 
         public IUserAuth GetUserAuth(string userAuthId)

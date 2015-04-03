@@ -2,6 +2,7 @@
 using ServiceStack.DataAnnotations;
 using ServiceStack.NativeTypes.CSharp;
 using ServiceStack.NativeTypes.FSharp;
+using ServiceStack.NativeTypes.Java;
 using ServiceStack.NativeTypes.Swift;
 using ServiceStack.NativeTypes.TypeScript;
 using ServiceStack.NativeTypes.VbNet;
@@ -33,6 +34,10 @@ namespace ServiceStack.NativeTypes
     [Route("/types/swift")]
     public class TypesSwift : NativeTypesBase { }
 
+    [Exclude(Feature.Soap)]
+    [Route("/types/java")]
+    public class TyepsJava : NativeTypesBase { }
+
     public class NativeTypesBase
     {
         public string BaseUrl { get; set; }
@@ -48,11 +53,15 @@ namespace ServiceStack.NativeTypes
         public bool? AddResponseStatus { get; set; }
         public bool? AddServiceStackTypes { get; set; }
         public bool? AddModelExtensions { get; set; }
+        public bool? AddPropertyAccessors { get; set; }
+        public bool? SettersReturnThis { get; set; }
         public bool? MakePropertiesOptional { get; set; }
         public string AddDefaultXmlNamespace { get; set; }
         public string GlobalNamespace { get; set; }
         public string BaseClass { get; set; }
+        public string Package { get; set; }
         public List<string> DefaultNamespaces { get; set; }
+        public List<string> DefaultImports { get; set; }
         public List<string> IncludeTypes { get; set; }
         public List<string> ExcludeTypes { get; set; }
     }
@@ -165,7 +174,34 @@ namespace ServiceStack.NativeTypes
                 var swift = new SwiftGenerator(typesConfig).GetCode(metadataTypes, base.Request);
                 return swift;
             }
-            catch (System.Exception ex)
+            catch (System.Exception)
+            {
+                throw;
+            }
+        }
+
+        [AddHeader(ContentType = MimeTypes.PlainText)]
+        public object Any(TyepsJava request)
+        {
+            if (request.BaseUrl == null)
+                request.BaseUrl = Request.GetBaseUrl();
+
+            var typesConfig = NativeTypesMetadata.GetConfig(request);
+
+            //Include SS types by removing ServiceStack namespaces
+            if (typesConfig.AddServiceStackTypes)
+                typesConfig.IgnoreTypesInNamespaces = new List<string>();
+
+            var metadataTypes = NativeTypesMetadata.GetMetadataTypes(Request, typesConfig);
+
+            metadataTypes.Types.RemoveAll(x => x.Name == "Service");
+
+            try
+            {
+                var java = new JavaGenerator(typesConfig).GetCode(metadataTypes, base.Request, NativeTypesMetadata);
+                return java;
+            }
+            catch (System.Exception)
             {
                 throw;
             }

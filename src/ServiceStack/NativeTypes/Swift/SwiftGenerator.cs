@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using ServiceStack.NativeTypes.CSharp;
 using ServiceStack.Text;
 using ServiceStack.Web;
 using ServiceStack.Host;
@@ -20,6 +19,11 @@ namespace ServiceStack.NativeTypes.Swift
             Config = config;
             AllTypes = new List<MetadataType>();
         }
+
+        public static List<string> DefaultImports = new List<string>
+        {
+            "Foundation",    
+        };
 
         public static Dictionary<string, string> TypeAliases = new Dictionary<string, string>
         {
@@ -45,23 +49,16 @@ namespace ServiceStack.NativeTypes.Swift
             "NSObject"
         };
 
-        class CreateTypeOptions
-        {
-            public Func<string> ImplementsFn { get; set; }
-            public bool IsRequest { get; set; }
-            public bool IsResponse { get; set; }
-            public bool IsOperation { get { return IsRequest || IsResponse; } }
-            public bool IsType { get; set; }
-        }
-
         public string GetCode(MetadataTypes metadata, IRequest request)
         {
-            var defaultNamespaces = Config.DefaultSwiftNamespaces.Safe();
-
             var typeNamespaces = new HashSet<string>();
             metadata.RemoveIgnoredTypes(Config);
             metadata.Types.Each(x => typeNamespaces.Add(x.Namespace));
             metadata.Operations.Each(x => typeNamespaces.Add(x.Request.Namespace));
+
+            var defaultImports = !Config.DefaultImports.IsEmpty()
+                ? Config.DefaultImports
+                : DefaultImports;
 
             Func<string, string> defaultValue = k =>
                 request.QueryString[k].IsNullOrEmpty() ? "//" : "";
@@ -75,14 +72,14 @@ namespace ServiceStack.NativeTypes.Swift
             sb.AppendLine();
 
             sb.AppendLine("{0}BaseClass: {1}".Fmt(defaultValue("BaseClass"), Config.BaseClass));
-            sb.AppendLine("{0}AddResponseStatus: {1}".Fmt(defaultValue("AddResponseStatus"), Config.AddResponseStatus));
             sb.AppendLine("{0}AddModelExtensions: {1}".Fmt(defaultValue("AddModelExtensions"), Config.AddModelExtensions));
             sb.AppendLine("{0}AddServiceStackTypes: {1}".Fmt(defaultValue("AddServiceStackTypes"), Config.AddServiceStackTypes));
-            sb.AppendLine("{0}InitializeCollections: {1}".Fmt(defaultValue("InitializeCollections"), Config.InitializeCollections));
-            sb.AppendLine("{0}AddImplicitVersion: {1}".Fmt(defaultValue("AddImplicitVersion"), Config.AddImplicitVersion));
             sb.AppendLine("{0}IncludeTypes: {1}".Fmt(defaultValue("IncludeTypes"), Config.IncludeTypes.Safe().ToArray().Join(",")));
             sb.AppendLine("{0}ExcludeTypes: {1}".Fmt(defaultValue("ExcludeTypes"), Config.ExcludeTypes.Safe().ToArray().Join(",")));
-            sb.AppendLine("{0}DefaultNamespaces: {1}".Fmt(defaultValue("DefaultNamespaces"), defaultNamespaces.ToArray().Join(",")));
+            sb.AppendLine("{0}AddResponseStatus: {1}".Fmt(defaultValue("AddResponseStatus"), Config.AddResponseStatus));
+            sb.AppendLine("{0}AddImplicitVersion: {1}".Fmt(defaultValue("AddImplicitVersion"), Config.AddImplicitVersion));
+            sb.AppendLine("{0}InitializeCollections: {1}".Fmt(defaultValue("InitializeCollections"), Config.InitializeCollections));
+            sb.AppendLine("{0}DefaultImports: {1}".Fmt(defaultValue("DefaultImports"), defaultImports.Join(",")));
 
             sb.AppendLine("*/");
             sb.AppendLine();
@@ -113,7 +110,7 @@ namespace ServiceStack.NativeTypes.Swift
                 .Where(x => conflictPartialNames.Any(name => x.Name.StartsWith(name)))
                 .Map(x => x.Name);
 
-            defaultNamespaces.Each(x => sb.AppendLine("import {0}".Fmt(x)));
+            defaultImports.Each(x => sb.AppendLine("import {0};".Fmt(x)));
 
             //ServiceStack core interfaces
             foreach (var type in AllTypes)
@@ -143,9 +140,9 @@ namespace ServiceStack.NativeTypes.Swift
                                     if (type.ReturnVoidMarker)
                                         return "IReturnVoid";
                                     if (type.ReturnMarkerTypeName != null)
-                                        return Type("IReturn`1", new[] { Type(type.ReturnMarkerTypeName) });
+                                        return ReturnType("IReturn`1", new[] { Type(type.ReturnMarkerTypeName) });
                                     return response != null
-                                        ? Type("IReturn`1", new[] { Type(response.Name, response.GenericArgs) })
+                                        ? ReturnType("IReturn`1", new[] { Type(response.Name, response.GenericArgs) })
                                         : null;
                                 },
                                 IsRequest = true,
@@ -306,14 +303,16 @@ namespace ServiceStack.NativeTypes.Swift
                     }
                 }
 
-                var addVersionInfo = Config.AddImplicitVersion != null && options.IsOperation;
+                var addVersionInfo = Config.AddImplicitVersion != null && options.IsRequest;
                 if (addVersionInfo)
                 {
                     sb.AppendLine("public var {0}:Int = {1}".Fmt("Version".PropertyStyle(), Config.AddImplicitVersion));
                 }
 
                 AddProperties(sb, type,
-                    initCollections: !type.IsInterface() && Config.InitializeCollections);
+                    initCollections: !type.IsInterface() && Config.InitializeCollections,
+                    includeResponseStatus: Config.AddResponseStatus && options.IsResponse
+                        && type.Properties.Safe().All(x => x.Name != typeof(ResponseStatus).Name));
 
                 sb = sb.UnIndent();
                 sb.AppendLine("}");
@@ -403,7 +402,9 @@ namespace ServiceStack.NativeTypes.Swift
             foreach (var prop in GetPropertes(type))
             {
                 var propType = FindType(prop.Type, prop.TypeNamespace, prop.GenericArgs);
-                if (propType.IsInterface() || IgnorePropertyTypeNames.Contains(prop.Type))
+                if (propType.IsInterface() 
+                    || IgnorePropertyTypeNames.Contains(prop.Type)
+                    || IgnorePropertyNames.Contains(prop.Name))
                     continue;
 
                 var fnName = "property";
@@ -542,7 +543,8 @@ namespace ServiceStack.NativeTypes.Swift
             sbExt.AppendLine("}");
         }
 
-        public void AddProperties(StringBuilderWrapper sb, MetadataType type, bool initCollections)
+        public void AddProperties(StringBuilderWrapper sb, MetadataType type, 
+            bool initCollections, bool includeResponseStatus)
         {
             var wasAdded = false;
 
@@ -617,14 +619,12 @@ namespace ServiceStack.NativeTypes.Swift
                 }
             }
 
-            if (Config.AddResponseStatus
-                && (type.Properties == null
-                    || type.Properties.All(x => x.Name != "ResponseStatus")))
+            if (includeResponseStatus)
             {
                 if (wasAdded) sb.AppendLine();
 
                 AppendDataMember(sb, null, dataMemberIndex++);
-                sb.AppendLine("public var {0}:ResponseStatus".Fmt("ResponseStatus".PropertyStyle()));
+                sb.AppendLine("public var {0}:ResponseStatus?".Fmt(typeof(ResponseStatus).Name.PropertyStyle()));
             }
         }
 
@@ -767,18 +767,28 @@ namespace ServiceStack.NativeTypes.Swift
             "ProviderOAuthAccess",
         };
 
+        public static bool IgnoreArrayReturnTypes = true;
+
+        public string ReturnType(string type, string[] genericArgs)
+        {
+            if (IgnoreArrayReturnTypes && genericArgs.Any(arg => arg.StartsWith("[")))
+                return null; // does not recognize [Array] as conforming to IReturn : JsonSerializable
+
+            return Type(type, genericArgs);
+        }
+
         public string Type(string type, string[] genericArgs)
         {
             if (!genericArgs.IsEmpty())
             {
                 if (type == "Nullable`1")
-                    return "{0}?".Fmt(TypeAlias(genericArgs[0].GenericArg()));
+                    return "{0}?".Fmt(TypeAlias(GenericArg(genericArgs[0])));
                 if (ArrayTypes.Contains(type))
-                    return "[{0}]".Fmt(TypeAlias(genericArgs[0].GenericArg()));
+                    return "[{0}]".Fmt(TypeAlias(GenericArg(genericArgs[0])));
                 if (DictionaryTypes.Contains(type))
                     return "[{0}:{1}]".Fmt(
-                        TypeAlias(genericArgs[0].GenericArg()),
-                        TypeAlias(genericArgs[1].GenericArg()));
+                        TypeAlias(GenericArg(genericArgs[0])),
+                        TypeAlias(GenericArg(genericArgs[1])));
 
                 var parts = type.Split('`');
                 if (parts.Length > 1)
@@ -789,7 +799,7 @@ namespace ServiceStack.NativeTypes.Swift
                         if (args.Length > 0)
                             args.Append(", ");
 
-                        args.Append(arg.GenericArg());
+                        args.Append(GenericArg(arg));
                     }
 
                     var typeName = TypeAlias(type);
@@ -913,16 +923,13 @@ namespace ServiceStack.NativeTypes.Swift
 
             return true;
         }
-    }
 
-    public static class SwiftGeneratorExtensions
-    {
-        public static string GenericArg(this string arg)
+        public string GenericArg(string arg)
         {
             return ConvertFromCSharp(arg.TrimStart('\'').ParseTypeIntoNodes());
         }
 
-        public static string ConvertFromCSharp(TextNode node)
+        public string ConvertFromCSharp(TextNode node)
         {
             var sb = new StringBuilder();
 
@@ -942,7 +949,7 @@ namespace ServiceStack.NativeTypes.Swift
             }
             else
             {
-                sb.Append(node.Text);
+                sb.Append(TypeAlias(node.Text));
                 if (node.Children.Count > 0)
                 {
                     sb.Append("<");
@@ -962,7 +969,10 @@ namespace ServiceStack.NativeTypes.Swift
             var typeName = sb.ToString();
             return typeName.SplitOnLast('.').Last(); //remove nested class
         }
+    }
 
+    public static class SwiftGeneratorExtensions
+    {
         public static string InheritedType(this string type)
         {
             var isArray = type.StartsWith("[");
@@ -980,8 +990,8 @@ namespace ServiceStack.NativeTypes.Swift
         public static string PropertyStyle(this string name)
         {
             var propName = name.ToCamelCase(); //Always use Swift conventions for now
-            return SwiftKeyWords.Contains(propName) 
-                ? propName.ToTitleCase() 
+            return SwiftKeyWords.Contains(propName)
+                ? propName.ToPascalCase() 
                 : propName;
 
             //return JsConfig.EmitCamelCaseNames

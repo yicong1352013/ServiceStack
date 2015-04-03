@@ -275,6 +275,21 @@ namespace ServiceStack.Auth
             return false;
         }
 
+        public void DeleteUserAuth(string userAuthId)
+        {
+            using (var db = dbFactory.Open())
+            using (var trans = db.OpenTransaction())
+            {
+                var userId = int.Parse(userAuthId);
+
+                db.Delete<TUserAuth>(x => x.Id == userId);
+                db.Delete<TUserAuthDetails>(x => x.UserAuthId == userId);
+                db.Delete<UserAuthRole>(x => x.UserAuthId == userId);
+
+                trans.Commit();                
+            }
+        }
+
         public void LoadUserAuth(IAuthSession session, IAuthTokens tokens)
         {
             session.ThrowIfNull("session");
@@ -285,18 +300,8 @@ namespace ServiceStack.Auth
 
         private void LoadUserAuth(IAuthSession session, IUserAuth userAuth)
         {
-            if (userAuth == null)
-            {
-                return;
-            }
-
-            var originalId = session.Id; //first record session Id (original session Id)
-            session.PopulateWith(userAuth); //here, original sessionId is overwritten with facebook user Id
-            session.Id = originalId; //we return Id of original session here
-
-            session.UserAuthId = userAuth.Id.ToString(CultureInfo.InvariantCulture);
-            session.ProviderOAuthAccess = GetUserAuthDetails(session.UserAuthId)
-                .ConvertAll(x => (IAuthTokens)x);
+            session.PopulateSession(userAuth,
+                GetUserAuthDetails(session.UserAuthId).ConvertAll(x => (IAuthTokens)x));
         }
 
         public IUserAuth GetUserAuth(string userAuthId)

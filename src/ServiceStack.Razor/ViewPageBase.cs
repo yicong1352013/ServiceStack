@@ -62,6 +62,9 @@ namespace ServiceStack.Razor
 
         public dynamic ViewBag { get; set; }
 
+        public static Action<RenderingPage, string> WriteLiteralFn = DefaultWriteLiteral;
+        public static Action<RenderingPage, TextWriter, string> WriteLiteralToFn = DefaultWriteLiteralTo;
+
         public IViewBag TypedViewBag
         {
             get { return (IViewBag)ViewBag; }
@@ -81,22 +84,32 @@ namespace ServiceStack.Razor
         //overridden by the RazorEngine when razor generates code.
         public abstract void Execute();
 
+        public static void DefaultWriteLiteral(RenderingPage page, string str)
+        {
+            page.Output.Write(str);
+        }
+
+        public static void DefaultWriteLiteralTo(RenderingPage page, TextWriter writer, string str)
+        {
+            writer.Write(str);
+        }
+
         //No HTML encoding
         public virtual void WriteLiteral(string str)
         {
-            this.Output.Write(str);
+            WriteLiteralFn(this, str);
         }
 
         //With HTML encoding
         public virtual void Write(object obj)
         {
-            this.Output.Write(HtmlEncode(obj));
+            WriteLiteralFn(this, HtmlEncode(obj));
         }
 
         //With HTML encoding
         public virtual void WriteTo(TextWriter writer, object obj)
         {
-            writer.Write(HtmlEncode(obj));
+            WriteLiteralToFn(this, writer, HtmlEncode(obj));
         }
 
         public virtual void WriteTo(TextWriter writer, HelperResult value)
@@ -120,7 +133,7 @@ namespace ServiceStack.Razor
             if (literal == null)
                 return;
 
-            writer.Write(literal);
+            WriteLiteralToFn(this, writer, literal);
         }
 
         private static string HtmlEncode(object value)

@@ -105,6 +105,19 @@
     </Compile>
     <Compile Include="Configuration\EnvironmentVariableSettings.cs" />
     <Compile Include="Configuration\MultiAppSettings.cs" />
+    <Compile Include="Html\Minifiers.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Html\Minifiers.css.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Html\Minifiers.html.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Html\Minifiers.js.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="NativeTypes\Java\JavaGenerator.cs" />
     <Compile Include="NativeTypes\Swift\SwiftGenerator.cs" />
     <Compile Include="NativeTypes\TypeScript\TypeScriptGenerator.cs" />
     <Compile Include="NativeTypes\VbNet\VbNetGenerator.cs" />
@@ -178,7 +191,7 @@
     <Compile Include="Host\HttpResponseStreamWrapper.cs" />
     <Compile Include="HttpError.cs" />
     <Compile Include="HttpResult.cs" />
-    <Compile Include="HttpResultExtensions.cs" />
+    <Compile Include="HttpResultUtils.cs" />
     <Compile Include="LocalizedStrings.cs" />
     <Compile Include="RedisErrorLoggerFeature.cs" />
     <Compile Include="RequestLogsFeature.cs" />

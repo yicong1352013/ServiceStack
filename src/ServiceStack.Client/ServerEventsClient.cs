@@ -54,6 +54,7 @@ namespace ServiceStack
         public static int BufferSize = 1024 * 64;
         static int DefaultHeartbeatMs = 10 * 1000;
         static int DefaultIdleTimeoutMs = 30 * 1000;
+        private bool stopped = true;
 
         byte[] buffer;
         Encoding encoding = new UTF8Encoding();
@@ -120,6 +121,7 @@ namespace ServiceStack
             if (log.IsDebugEnabled)
                 log.DebugFormat("Start()");
 
+            stopped = false;
             httpReq = (HttpWebRequest)WebRequest.Create(EventStreamUri);
             httpReq.CookieContainer = ((ServiceClientBase)ServiceClient).CookieContainer; //share auth cookies
             //httpReq.AllowReadStreamBuffering = false; //.NET v4.5
@@ -144,6 +146,8 @@ namespace ServiceStack
                 messageTcs = new TaskCompletionSource<ServerEventMessage>();
 
             LastPulseAt = DateTime.UtcNow;
+            if (log.IsDebugEnabled)
+                log.Debug("[SSE-CLIENT] LastPulseAt: " + DateTime.UtcNow.TimeOfDay);
 
             ProcessResponse(stream);
 
@@ -184,7 +188,7 @@ namespace ServiceStack
         protected void OnConnectReceived()
         {
             if (log.IsDebugEnabled)
-                log.DebugFormat("OnConnectReceived: {0} on #{1} / {2} on ({3})",
+                log.DebugFormat("[SSE-CLIENT] OnConnectReceived: {0} on #{1} / {2} on ({3})",
                     ConnectionInfo.EventId, ConnectionDisplayName, ConnectionInfo.Id, string.Join(", ", Channels));
 
             StartNewHeartbeat();
@@ -212,6 +216,9 @@ namespace ServiceStack
 
         protected void Heartbeat(object state)
         {
+            if (log.IsDebugEnabled)
+                log.DebugFormat("[SSE-CLIENT] Prep for Heartbeat...");
+
             if (cancel.IsCancellationRequested)
                 return;
 
@@ -318,7 +325,11 @@ namespace ServiceStack
         {
             try
             {
-                Stop();
+                InternalStop();
+
+                if (stopped)
+                    return;
+
                 SleepBackOffMultiplier(errorsCount)
                     .ContinueWith(t =>
                     {
@@ -387,12 +398,17 @@ namespace ServiceStack
                     int pos;
                     while ((pos = text.IndexOf('\n')) >= 0)
                     {
-                        if (text == "\n")
+                        if (pos == 0)
                         {
                             if (currentMsg != null) 
                                 ProcessEventMessage(currentMsg);
                             currentMsg = null;
-                            text = "";
+
+                            text = text.Substring(pos + 1);
+
+                            if (text.Length > 0)
+                                continue;
+                            
                             break;
                         }
 
@@ -411,6 +427,8 @@ namespace ServiceStack
                 {
                     if (log.IsDebugEnabled)
                         log.DebugFormat("Connection ended on {0}", ConnectionDisplayName);
+
+                    Restart();
                 }
             });
         }
@@ -503,7 +521,7 @@ namespace ServiceStack
 
         private void ProcessOnConnectMessage(ServerEventMessage e)
         {
-            var msg = JsonObject.Parse(e.Json);
+            var msg = JsonServiceClient.ParseObject(e.Json);
             ConnectionInfo = new ServerEventConnect {
                 HeartbeatIntervalMs = DefaultHeartbeatMs,
                 IdleTimeoutMs = DefaultIdleTimeoutMs,
@@ -523,7 +541,7 @@ namespace ServiceStack
 
         private void ProcessOnJoinMessage(ServerEventMessage e)
         {
-            var msg = JsonObject.Parse(e.Json);
+            var msg = JsonServiceClient.ParseObject(e.Json);
             var joinMsg = new ServerEventJoin().Populate(e, msg);
             joinMsg.UserId = msg.Get("userId");
             joinMsg.DisplayName = msg.Get("displayName");
@@ -534,7 +552,7 @@ namespace ServiceStack
 
         private void ProcessOnLeaveMessage(ServerEventMessage e)
         {
-            var msg = JsonObject.Parse(e.Json);
+            var msg = JsonServiceClient.ParseObject(e.Json);
             var leaveMsg = new ServerEventLeave().Populate(e, msg);
             leaveMsg.Channel = msg.Get("channel");
 
@@ -544,13 +562,22 @@ namespace ServiceStack
         private void ProcessOnHeartbeatMessage(ServerEventMessage e)
         {
             LastPulseAt = DateTime.UtcNow;
-            var msg = JsonObject.Parse(e.Json);
+            if (log.IsDebugEnabled)
+                log.Debug("[SSE-CLIENT] LastPulseAt: " + DateTime.UtcNow.TimeOfDay);
+
+            var msg = JsonServiceClient.ParseObject(e.Json);
             var heartbeatMsg = new ServerEventHeartbeat().Populate(e, msg);
 
             OnHeartbeatReceived(heartbeatMsg);
         }
 
         public virtual Task Stop()
+        {
+            stopped = true;
+            return InternalStop();
+        }
+
+        public virtual Task InternalStop()
         {
             if (log.IsDebugEnabled)
                 log.DebugFormat("Stop()");

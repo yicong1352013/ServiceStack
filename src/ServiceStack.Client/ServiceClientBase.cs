@@ -21,8 +21,6 @@ using ServiceStack.Web;
 
 #if SL5
 using ServiceStack.Text;
-#else
-using System.Collections.Concurrent;
 #endif
 
 namespace ServiceStack
@@ -599,8 +597,11 @@ namespace ServiceStack
             {
                 var errorResponse = ((HttpWebResponse)webEx.Response);
                 log.Error(webEx);
-                log.DebugFormat("Status Code : {0}", errorResponse.StatusCode);
-                log.DebugFormat("Status Description : {0}", errorResponse.StatusDescription);
+                if (log.IsDebugEnabled)
+                {
+                    log.DebugFormat("Status Code : {0}", errorResponse.StatusCode);
+                    log.DebugFormat("Status Description : {0}", errorResponse.StatusDescription);
+                }
 
                 var serviceEx = new WebServiceException(errorResponse.StatusDescription)
                 {
@@ -759,7 +760,7 @@ namespace ServiceStack
                 GlobalRequestFilter(client);
         }
 
-        protected IDisposable __requestAccess()
+        protected static IDisposable __requestAccess()
         {
             return LicenseUtils.RequestAccess(AccessToken.__accessToken, LicenseFeature.Client, LicenseFeature.Text);
         }

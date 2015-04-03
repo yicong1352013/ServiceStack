@@ -409,7 +409,10 @@ namespace ServiceStack.Host
                 object response = null;
                 try
                 {
-                    requestDto = request.Dto = appHost.OnPreExecuteServiceFilter(service, requestDto, request, request.Response);
+                    requestDto = appHost.OnPreExecuteServiceFilter(service, requestDto, request, request.Response);
+
+                    if (request.Dto == null) // Don't override existing batched DTO[]
+                        request.Dto = requestDto; 
 
                     //Executes the service and returns the result
                     response = serviceExec(request, requestDto);
@@ -504,7 +507,7 @@ namespace ServiceStack.Host
                 AssertServiceRestrictions(requestType, req.RequestAttributes);
 
             var handlerFn = GetService(requestType);
-            return handlerFn(req, requestDto);
+            return appHost.OnAfterExecute(req, requestDto, handlerFn(req, requestDto));
         }
 
         public object Execute(IRequest req)
@@ -560,9 +563,7 @@ namespace ServiceStack.Host
                     var elType = requestType.GetElementType();
                     if (requestExecMap.TryGetValue(elType, out handlerFn))
                     {
-                        return (req, dtos) => 
-                            from object dto in (IEnumerable)dtos 
-                            select handlerFn(req, dto);
+                        return CreateAutoBatchServiceExec(handlerFn);
                     }
                 }
 
@@ -570,6 +571,79 @@ namespace ServiceStack.Host
             }
 
             return handlerFn;
+        }
+
+        private static ServiceExecFn CreateAutoBatchServiceExec(ServiceExecFn handlerFn)
+        {
+            return (req, dtos) => 
+            {
+                var dtosList = ((IEnumerable) dtos).Map(x => x);
+                var ret = new object[dtosList.Count];
+                if (ret.Length == 0)
+                    return ret;
+
+                var firstDto = dtosList[0];
+
+                var firstResponse = handlerFn(req, firstDto);
+                if (firstResponse is Exception)
+                {
+                    req.SetAutoBatchCompletedHeader(0);
+                    return firstResponse;
+                }
+
+                var asyncResponse = firstResponse as Task;
+
+                //sync
+                if (asyncResponse == null) 
+                {
+                    ret[0] = firstResponse; //don't re-execute first request
+                    for (var i = 1; i < dtosList.Count; i++)
+                    {
+                        var dto = dtosList[i];
+                        var response = handlerFn(req, dto);
+                        //short-circuit on first error
+                        if (response is Exception)
+                        {
+                            req.SetAutoBatchCompletedHeader(i);
+                            return response;
+                        }
+
+                        ret[i] = response;
+                    }
+                    req.SetAutoBatchCompletedHeader(dtosList.Count);
+                    return ret;
+                }
+
+                //async
+                var asyncResponses = new Task[dtosList.Count];
+                Task firstAsyncError = null;
+
+                //execute each async service sequentially
+                return dtosList.EachAsync((dto, i) =>
+                {
+                    //short-circuit on first error and don't exec any more handlers
+                    if (firstAsyncError != null)
+                        return firstAsyncError;
+
+                    asyncResponses[i] = i == 0
+                        ? asyncResponse //don't re-execute first request
+                        : (Task) handlerFn(req, dto);
+
+                    if (asyncResponses[i].GetResult() is Exception)
+                    {
+                        req.SetAutoBatchCompletedHeader(i);
+                        return firstAsyncError = asyncResponses[i];
+                    }
+                    return asyncResponses[i];
+                })
+                .ContinueWith(x => {
+                    if (firstAsyncError != null)
+                        return (object)firstAsyncError;
+
+                    req.SetAutoBatchCompletedHeader(dtosList.Count);
+                    return (object) asyncResponses;
+                }); //return error or completed responses
+            };
         }
 
         public void AssertServiceRestrictions(Type requestType, RequestAttributes actualAttributes)

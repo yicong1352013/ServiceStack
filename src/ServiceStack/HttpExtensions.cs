@@ -25,9 +25,21 @@ namespace ServiceStack
             return relativeUrl.ToAbsoluteUri();
         }
 
-        public static string ToAbsoluteUri(this string relativeUrl)
+        public static string ToAbsoluteUri(this object requestDto, IRequest req, string httpMethod = null, string formatFallbackToPredefinedRoute = null)
         {
-            var absoluteUrl = HostContext.Config.WebHostUrl.CombineWith(relativeUrl);
+            var relativeUrl = requestDto.ToUrl(
+                httpMethod ?? HttpMethods.Get,
+                formatFallbackToPredefinedRoute ?? HostContext.Config.DefaultContentType.ToContentFormat());
+
+            return relativeUrl.ToAbsoluteUri(req);
+        }
+
+        public static string ToAbsoluteUri(this string relativeUrl, IRequest req = null)
+        {
+            if (req == null)
+                req = HostContext.TryGetCurrentRequest();
+
+            var absoluteUrl = HostContext.ResolveAbsoluteUrl("~/".CombineWith(relativeUrl), req);
             return absoluteUrl;
         }
 
@@ -38,7 +50,7 @@ namespace ServiceStack
         {
             if (!skipHeaders) httpRes.ApplyGlobalResponseHeaders();
             httpRes.Close();
-            HostContext.CompleteRequest();
+            HostContext.CompleteRequest(null);
         }
 
         /// <summary>
@@ -47,7 +59,7 @@ namespace ServiceStack
         public static void EndRequest(this IResponse httpRes, bool skipHeaders = false)
         {
             httpRes.EndHttpHandlerRequest(skipHeaders: skipHeaders);
-            HostContext.CompleteRequest();
+            HostContext.CompleteRequest(httpRes.Request);
         }
 
         /// <summary>

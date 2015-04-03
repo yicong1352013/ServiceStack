@@ -242,15 +242,33 @@ namespace ServiceStack.Auth
 
         private void LoadUserAuth(IAuthSession session, IUserAuth userAuth)
         {
-            if (userAuth == null)
-            {
-                return;
-            }
+            session.PopulateSession(userAuth, 
+                GetUserAuthDetails(session.UserAuthId).ConvertAll(x => (IAuthTokens)x));
+        }
 
-            session.PopulateWith(userAuth);
-            session.UserAuthId = userAuth.Id.ToString(CultureInfo.InvariantCulture);
-            session.ProviderOAuthAccess = GetUserAuthDetails(session.UserAuthId)
-                .ConvertAll(x => (IAuthTokens)x);
+        public void DeleteUserAuth(string userAuthId)
+        {
+            using (var redis = factory.GetClient())
+            {
+                var existingUser = GetUserAuth(redis, userAuthId);
+                if (existingUser == null)
+                    return;
+
+                redis.As<IUserAuth>().DeleteById(userAuthId);
+
+                var idx = IndexUserAuthAndProviderIdsSet(long.Parse(userAuthId));
+                var authProiverIds = redis.GetAllItemsFromSet(idx);
+                redis.As<TUserAuthDetails>().DeleteByIds(authProiverIds);
+
+                if (existingUser.UserName != null)
+                {
+                    redis.RemoveEntryFromHash(IndexUserNameToUserId, existingUser.UserName);
+                }
+                if (existingUser.Email != null)
+                {
+                    redis.RemoveEntryFromHash(IndexEmailToUserId, existingUser.Email);
+                }
+            }
         }
 
         private IUserAuth GetUserAuth(IRedisClientFacade redis, string userAuthId)

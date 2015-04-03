@@ -8,8 +8,9 @@ using System.Reflection.Emit;
 using System.Threading;
 
 using Funq;
-using ServiceStack.Host;
+using ServiceStack.DataAnnotations;
 using ServiceStack.MiniProfiler;
+using ServiceStack.NativeTypes;
 using ServiceStack.Reflection;
 using ServiceStack.Text;
 using ServiceStack.Web;
@@ -29,6 +30,8 @@ namespace ServiceStack
         public string UseNamedConnection { get; set; }
         public bool EnableUntypedQueries { get; set; }
         public bool EnableRawSqlFilters { get; set; }
+        public bool EnableAutoQueryViewer { get; set; }
+        public AutoQueryViewerConfig AutoQueryViewerConfig { get; set; }
         public bool OrderByPrimaryKeyOnPagedQuery { get; set; }
         public Type AutoQueryServiceBaseType { get; set; }
         public Dictionary<Type, QueryFilterDelegate> QueryFilters { get; set; }
@@ -97,8 +100,26 @@ namespace ServiceStack
             AutoQueryServiceBaseType = typeof(AutoQueryServiceBase);
             QueryFilters = new Dictionary<Type, QueryFilterDelegate>();
             EnableUntypedQueries = true;
+            EnableAutoQueryViewer = true;
             OrderByPrimaryKeyOnPagedQuery = true;
             LoadFromAssemblies = new HashSet<Assembly>();
+
+            this.AutoQueryViewerConfig = new AutoQueryViewerConfig
+            {
+                ImplicitConventions = new List<Property>
+                {
+                    new Property { Name = "=", Value = "%"},
+                    new Property { Name = ">=", Value = ">%"},
+                    new Property { Name = ">", Value = "%>"},
+                    new Property { Name = "<=", Value = "%<"},
+                    new Property { Name = "<", Value = "<%"},
+                    new Property { Name = "In", Value = "%In"},
+                    new Property { Name = "Between", Value = "%Between"},
+                    new Property { Name = "Starts With", Value = "%StartsWith"},
+                    new Property { Name = "Contains", Value = "%Contains"},
+                    new Property { Name = "Ends With", Value = "%EndsWith"},
+                }
+            };
         }
 
         public void Register(IAppHost appHost)
@@ -134,6 +155,9 @@ namespace ServiceStack
 
             appHost.Metadata.GetOperationAssemblies()
                 .Each(x => LoadFromAssemblies.Add(x));
+
+            if (EnableAutoQueryViewer)
+                appHost.RegisterService<AutoQueryMetadataService>();
         }
 
         public void AfterPluginsLoaded(IAppHost appHost)
@@ -215,6 +239,175 @@ namespace ServiceStack
             return this;
         }
     }
+
+    public class AutoQueryViewerConfig
+    {
+        /// <summary>
+        /// The BaseUrl of the ServiceStack instance (inferred)
+        /// </summary>
+        public string ServiceBaseUrl { get; set; }
+        /// <summary>
+        /// Name of the ServiceStack Instance (inferred)
+        /// </summary>
+        public string ServiceName { get; set; }
+        /// <summary>
+        /// Textual description of the AutoQuery Services (shown in Home Services list)
+        /// </summary>
+        public string ServiceDescription { get; set; }
+        /// <summary>
+        /// Icon for this ServiceStack Instance (shown in Home Services list)
+        /// </summary>
+        public string ServiceIconUrl { get; set; }
+
+        /// <summary>
+        /// Whether to publish this Service to the public Services registry
+        /// </summary>
+        public bool IsPublic { get; set; }
+        /// <summary>
+        /// Only show AutoQuery Services attributed with [AutoQueryViewer]
+        /// </summary>
+        public bool OnlyShowAnnotatedServices { get; set; }
+        /// <summary>
+        /// List of different Search Filters available
+        /// </summary>
+        public List<Property> ImplicitConventions { get; set; }
+
+        /// <summary>
+        /// The Column which should be selected by default
+        /// </summary>
+        public string DefaultSearchField { get; set; }
+        /// <summary>
+        /// The Query Type filter which should be selected by default
+        /// </summary>
+        public string DefaultSearchType { get; set; }
+        /// <summary>
+        /// The search text which should be populated by default
+        /// </summary>
+        public string DefaultSearchText { get; set; }
+
+        /// <summary>
+        /// Link to your website users can click to find out more about you
+        /// </summary>
+        public string BrandUrl { get; set; }
+        /// <summary>
+        /// A custom logo or image that users can click on to visit your site
+        /// </summary>
+        public string BrandImageUrl { get; set; }
+        /// <summary>
+        /// The default color of text
+        /// </summary>
+        public string TextColor { get; set; }
+        /// <summary>
+        /// The default color of links
+        /// </summary>
+        public string LinkColor { get; set; }
+        /// <summary>
+        /// The default background color of each screen
+        /// </summary>
+        public string BackgroundColor { get; set; }
+        /// <summary>
+        /// The default background image of each screen anchored to the bottom left
+        /// </summary>
+        public string BackgroundImageUrl { get; set; }
+        /// <summary>
+        /// The default icon for each of your AutoQuery Services
+        /// </summary>
+        public string IconUrl { get; set; }
+    }
+
+    [Exclude(Feature.Soap)]
+    [Route("/autoquery/metadata")]
+    public class AutoQueryMetadata : IReturn<AutoQueryMetadataResponse> { }
+
+    public class AutoQueryOperation
+    {
+        public string Request { get; set; }
+        public string From { get; set; }
+        public string To { get; set; }
+    }
+
+    public class AutoQueryMetadataResponse
+    {
+        public AutoQueryViewerConfig Config { get; set; }
+
+        public List<AutoQueryOperation> Operations { get; set; }
+
+        public List<MetadataType> Types { get; set; }
+
+        public ResponseStatus ResponseStatus { get; set; }
+    }
+
+    [Restrict(VisibilityTo = RequestAttributes.None)]
+    public class AutoQueryMetadataService : Service
+    {
+        public INativeTypesMetadata NativeTypesMetadata { get; set; }
+
+        public object Any(AutoQueryMetadata request)
+        {
+            if (NativeTypesMetadata == null)
+                throw new NotSupportedException("AutoQueryViewer requries NativeTypesFeature");
+
+            var feature = HostContext.GetPlugin<AutoQueryFeature>();
+            var config = feature.AutoQueryViewerConfig;
+
+            if (config == null)
+                throw new NotSupportedException("AutoQueryViewerConfig is missing");
+
+            if (config.ServiceBaseUrl == null)
+                config.ServiceBaseUrl = base.Request.ResolveBaseUrl();
+
+            if (config.ServiceName == null)
+                config.ServiceName = HostContext.ServiceName;
+
+            var typesConfig = NativeTypesMetadata.GetConfig(new TypesMetadata { BaseUrl = Request.GetBaseUrl() });
+            var metadataTypes = NativeTypesMetadata.GetMetadataTypes(Request, typesConfig);
+
+            var response = new AutoQueryMetadataResponse {
+                Config = feature.AutoQueryViewerConfig,
+                Operations = new List<AutoQueryOperation>(),
+                Types = new List<MetadataType>(),
+            };
+
+            var includeTypeNames = new HashSet<string>();
+
+            foreach (var op in metadataTypes.Operations)
+            {
+                if (op.Request.Inherits != null && op.Request.Inherits.Name.StartsWith("QueryBase`"))
+                {
+                    if (config.OnlyShowAnnotatedServices)
+                    {
+                        var serviceAttrs = op.Request.Attributes.Safe();
+                        var attr = serviceAttrs.FirstOrDefault(x => x.Name + "Attribute" == typeof(AutoQueryViewerAttribute).Name);
+                        if (attr == null)
+                            continue;
+                    }
+
+                    var inheritArgs = op.Request.Inherits.GenericArgs.Safe().ToArray();
+                    response.Operations.Add(new AutoQueryOperation {
+                        Request = op.Request.Name,
+                        From = inheritArgs.First(),
+                        To = inheritArgs.Last(),
+                    });
+
+                    response.Types.Add(op.Request);
+                    op.Request.GetReferencedTypeNames().Each(x => includeTypeNames.Add(x));
+                }
+            }
+
+            var types = metadataTypes.Types.Where(x => includeTypeNames.Contains(x.Name));
+
+            //Add referenced types to type name search
+            types.SelectMany(x => x.GetReferencedTypeNames()).Each(x => includeTypeNames.Add(x));
+
+            //Only need to seek 1-level deep in AutoQuery's (db.LoadSelect)
+            types = metadataTypes.Types.Where(x => includeTypeNames.Contains(x.Name));
+
+            response.Types.AddRange(types);
+
+            return response;
+        }
+    }
+
 
     public interface IAutoQuery
     {

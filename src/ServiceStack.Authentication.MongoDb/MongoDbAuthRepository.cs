@@ -162,9 +162,8 @@ namespace ServiceStack.Authentication.MongoDb
         private Counters IncCounter(string counterName)
         {
             var CountersCollection = mongoDatabase.GetCollection<Counters>(Counters_Col);
-            var incId = Update.Inc(counterName, 1);
-            var query = Query.Null;
-            FindAndModifyResult counterIncResult = CountersCollection.FindAndModify(query, SortBy.Null, incId, true);
+            var args = new FindAndModifyArgs() { Query = Query.Null, SortBy = SortBy.Null, Update = Update.Inc(counterName, 1), Upsert = true };
+            FindAndModifyResult counterIncResult = CountersCollection.FindAndModify(args);
             Counters updatedCounters = counterIncResult.GetModifiedDocumentAs<Counters>();
             return updatedCounters;
         }
@@ -282,12 +281,8 @@ namespace ServiceStack.Authentication.MongoDb
 
         private void LoadUserAuth(IAuthSession session, IUserAuth userAuth)
         {
-            if (userAuth == null) return;
-
-            session.PopulateWith(userAuth);
-            session.UserAuthId = userAuth.Id.ToString(CultureInfo.InvariantCulture);
-            session.ProviderOAuthAccess = GetUserAuthDetails(session.UserAuthId)
-                .ConvertAll(x => (IAuthTokens)x);
+            session.PopulateSession(userAuth,
+                GetUserAuthDetails(session.UserAuthId).ConvertAll(x => (IAuthTokens)x));
         }
 
         public IUserAuth GetUserAuth(string userAuthId)
@@ -323,10 +318,18 @@ namespace ServiceStack.Authentication.MongoDb
             SaveUser(userAuth);
         }
 
+        public void DeleteUserAuth(string userAuthId)
+        {
+            var userAuthCollection = mongoDatabase.GetCollection<UserAuth>(UserAuth_Col);
+            userAuthCollection.Remove(Query.EQ("_id", int.Parse(userAuthId)));
+            
+            var query = Query.EQ("UserAuthId", int.Parse(userAuthId));
+            var userAuthDetails = mongoDatabase.GetCollection<UserAuthDetails>(UserOAuthProvider_Col);
+            userAuthDetails.Remove(query);
+        }
+
         public List<IUserAuthDetails> GetUserAuthDetails(string userAuthId)
         {
-            var id = int.Parse(userAuthId);
-
             IMongoQuery query = Query.EQ("UserAuthId", int.Parse(userAuthId));
 
             var collection = mongoDatabase.GetCollection<UserAuthDetails>(UserOAuthProvider_Col);

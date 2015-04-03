@@ -211,7 +211,7 @@ namespace ServiceStack
 
         public static string GetFormatModifier(this IRequest httpReq)
 		{
-			var format = httpReq.QueryString["format"];
+			var format = httpReq.QueryString[Keywords.Format];
 			if (format == null) return null;
 			var parts = format.SplitOnFirst('.');
 			return parts.Length > 1 ? parts[1] : null;
@@ -255,7 +255,7 @@ namespace ServiceStack
 
         public static string GetJsonpCallback(this IRequest httpReq)
 		{
-			return httpReq == null ? null : httpReq.QueryString["callback"];
+			return httpReq == null ? null : httpReq.QueryString[Keywords.Callback];
 		}
 
 
@@ -552,10 +552,10 @@ namespace ServiceStack
 
         public static string GetQueryStringContentType(this IRequest httpReq)
         {
-            var callback = httpReq.QueryString["callback"];
+            var callback = httpReq.QueryString[Keywords.Callback];
             if (!String.IsNullOrEmpty(callback)) return MimeTypes.Json;
 
-            var format = httpReq.QueryString["format"];
+            var format = httpReq.QueryString[Keywords.Format];
             if (format == null)
             {
                 const int formatMaxLength = 4;
@@ -706,22 +706,27 @@ namespace ServiceStack
             return url;
         }
 
+        public static string InferBaseUrl(this string absoluteUri, string fromPathInfo = null)
+        {
+            if (string.IsNullOrEmpty(fromPathInfo))
+                fromPathInfo = "/" + (HostContext.Config.HandlerFactoryPath ?? "");
+
+            if (string.IsNullOrEmpty(absoluteUri))
+                return null;
+
+            var pos = absoluteUri.IndexOf(fromPathInfo, "https://".Length + 1, StringComparison.Ordinal);
+            return pos >= 0 ? absoluteUri.Substring(0, pos) : absoluteUri;
+        }
+
         public static string GetBaseUrl(this IRequest httpReq)
         {
             var baseUrl = HttpHandlerFactory.GetBaseUrl();
-            if (baseUrl != null) return baseUrl;
+            if (baseUrl != null) 
+                return baseUrl.NormalizeScheme();
 
-            var pathInfo = httpReq.PathInfo;
-            if (pathInfo != null)
-            {
-                var absoluteUri = httpReq.AbsoluteUri;
-                var pos = absoluteUri.IndexOf(pathInfo, StringComparison.OrdinalIgnoreCase);
-                if (pos >= 0)
-                {
-                    baseUrl = absoluteUri.Substring(0, pos);
-                    return baseUrl.NormalizeScheme();
-                }
-            }
+            baseUrl = httpReq.AbsoluteUri.InferBaseUrl(fromPathInfo: httpReq.PathInfo);
+            if (baseUrl != null)
+                return baseUrl.NormalizeScheme();
 
             var handlerPath = HostContext.Config.HandlerFactoryPath;
 
@@ -934,6 +939,14 @@ namespace ServiceStack
         {
             //Only way to send T[] is via /reply/operation[] predefined route
             return req.Dto != null && req.Dto.GetType().IsArray;
+        }
+
+        public static void SetAutoBatchCompletedHeader(this IRequest req, int completed)
+        {
+            if (req == null || req.Response == null)
+                return;
+
+            req.Response.AddHeader(HttpHeaders.XAutoBatchCompleted, completed.ToString());
         }
 
         public static System.ServiceModel.Channels.Message GetSoapMessage(this IRequest httpReq)

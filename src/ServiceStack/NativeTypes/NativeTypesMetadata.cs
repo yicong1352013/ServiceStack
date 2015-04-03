@@ -1,11 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Serialization;
-using ServiceStack.Auth;
 using ServiceStack.Host;
-using ServiceStack.Text;
 using ServiceStack.Web;
 
 namespace ServiceStack.NativeTypes
@@ -36,14 +35,16 @@ namespace ServiceStack.NativeTypes
                 InitializeCollections = req.InitializeCollections ?? defaults.InitializeCollections,
                 AddImplicitVersion = req.AddImplicitVersion ?? defaults.AddImplicitVersion,
                 BaseClass = req.BaseClass ?? defaults.BaseClass,
+                Package = req.Package ?? defaults.Package,
                 AddResponseStatus = req.AddResponseStatus ?? defaults.AddResponseStatus,
                 AddServiceStackTypes = req.AddServiceStackTypes ?? defaults.AddServiceStackTypes,
                 AddModelExtensions = req.AddModelExtensions ?? defaults.AddModelExtensions,
+                AddPropertyAccessors = req.AddPropertyAccessors ?? defaults.AddPropertyAccessors,
+                SettersReturnThis = req.SettersReturnThis ?? defaults.SettersReturnThis,
                 MakePropertiesOptional = req.MakePropertiesOptional ?? defaults.MakePropertiesOptional,
                 AddDefaultXmlNamespace = req.AddDefaultXmlNamespace ?? defaults.AddDefaultXmlNamespace,
                 DefaultNamespaces = req.DefaultNamespaces ?? defaults.DefaultNamespaces,
-                DefaultTypeScriptNamespaces = req.DefaultNamespaces ?? defaults.DefaultTypeScriptNamespaces,
-                DefaultSwiftNamespaces = req.DefaultNamespaces ?? defaults.DefaultSwiftNamespaces,
+                DefaultImports = req.DefaultImports ?? defaults.DefaultImports,
                 IncludeTypes = TrimArgs(req.IncludeTypes ?? defaults.IncludeTypes),
                 ExcludeTypes = TrimArgs(req.ExcludeTypes ?? defaults.ExcludeTypes),
                 ExportAttributes = defaults.ExportAttributes,
@@ -376,9 +377,10 @@ namespace ServiceStack.NativeTypes
 
         public List<MetadataAttribute> ToAttributes(Type type)
         {
-            return !(type.IsUserType() || type.IsUserEnum() || type.IsInterface) || type.IsOrHasGenericInterfaceTypeOf(typeof(IEnumerable<>))
+            return !(type.IsUserType() || type.IsUserEnum() || type.IsInterface) 
+                    || type.IsOrHasGenericInterfaceTypeOf(typeof(IEnumerable<>))
                 ? null
-                : ToAttributes(type.GetCustomAttributes(false));
+                : ToAttributes(type.AllAttributes());
         }
 
         public List<MetadataPropertyType> ToProperties(Type type)
@@ -610,6 +612,15 @@ namespace ServiceStack.NativeTypes
         }
     }
 
+    public class CreateTypeOptions
+    {
+        public Func<string> ImplementsFn { get; set; }
+        public bool IsRequest { get; set; }
+        public bool IsResponse { get; set; }
+        public bool IsType { get; set; }
+        public bool IsNestedType { get; set; }
+    }
+
     public class TextNode
     {
         public TextNode()
@@ -624,6 +635,45 @@ namespace ServiceStack.NativeTypes
 
     public static class MetadataExtensions
     {
+        public static MetadataTypeName ToMetadataTypeName(this MetadataType type)
+        {
+            if (type == null) return null;
+
+            return new MetadataTypeName
+            {
+                Name = type.Name,
+                Namespace = type.Namespace,
+                GenericArgs = type.GenericArgs
+            };
+        }
+
+        public static HashSet<string> GetReferencedTypeNames(this MetadataType type)
+        {
+            var to = new HashSet<string>();
+
+            if (type.Inherits != null)
+            {
+                to.Add(type.Inherits.Name);
+
+                foreach (var genericArg in type.Inherits.GenericArgs.Safe())
+                {
+                    to.Add(genericArg);
+                }
+            }
+
+            foreach (var pi in type.Properties.Safe())
+            {
+                to.Add(pi.Type);
+
+                foreach (var genericArg in pi.GenericArgs.Safe())
+                {
+                    to.Add(genericArg);
+                }
+            }
+
+            return to;
+        }
+
         public static bool IgnoreSystemType(this MetadataType type)
         {
             return type == null
@@ -790,6 +840,52 @@ namespace ServiceStack.NativeTypes
         public static string SanitizeType(this string typeName)
         {
             return typeName != null ? typeName.TrimStart('\'') : null;
+        }
+
+        public static string SafeComment(this string comment)
+        {
+            return comment.Replace("\r", "").Replace("\n", "");
+        }
+
+        public static string SafeToken(this string token)
+        {
+            if (token.ContainsAny("\"", " ", "-", "+", "\\", "*", "=", "!"))
+                throw new InvalidDataException("MetaData is potentially malicious. Expected token, Received: {0}".Fmt(token));
+
+            return token;
+        }
+
+        public static string SafeValue(this string value)
+        {
+            if (value.Contains('"'))
+                throw new InvalidDataException("MetaData is potentially malicious. Expected scalar value, Received: {0}".Fmt(value));
+
+            return value;
+        }
+
+        public static string QuotedSafeValue(this string value)
+        {
+            return "\"{0}\"".Fmt(value.SafeValue());
+        }
+
+        public static MetadataAttribute ToMetadataAttribute(this MetadataRoute route)
+        {
+            var attr = new MetadataAttribute
+            {
+                Name = "Route",
+                ConstructorArgs = new List<MetadataPropertyType>
+                {
+                    new MetadataPropertyType { Type = "string", Value = route.Path },
+                },
+            };
+
+            if (route.Verbs != null)
+            {
+                attr.ConstructorArgs.Add(
+                    new MetadataPropertyType { Type = "string", Value = route.Verbs });
+            }
+
+            return attr;
         }
     }
 }

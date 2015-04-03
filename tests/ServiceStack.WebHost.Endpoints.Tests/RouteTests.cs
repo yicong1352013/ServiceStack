@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System;
+using System.Net;
 using Funq;
 using NUnit.Framework;
 using ServiceStack.Formats;
@@ -47,6 +48,21 @@ namespace ServiceStack.WebHost.Endpoints.Tests
                     httpRes.ContentType.Print();
                     Assert.That(httpRes.ContentType.MatchesContentType(MimeTypes.Json));
                 });
+
+            Assert.That(response.ToLower(), Is.EqualTo("{\"data\":\"foo\"}"));
+        }
+
+        [Test]
+        public void Can_process_plaintext_as_JSON()
+        {
+            var response = Config.AbsoluteBaseUri.CombineWith("/custom")
+                .PostStringToUrl("{\"data\":\"foo\"}", 
+                    contentType:MimeTypes.PlainText,
+                    responseFilter: httpRes => 
+                    {
+                        httpRes.ContentType.Print();
+                        Assert.That(httpRes.ContentType.MatchesContentType(MimeTypes.Json));
+                    });
 
             Assert.That(response.ToLower(), Is.EqualTo("{\"data\":\"foo\"}"));
         }
@@ -114,6 +130,34 @@ namespace ServiceStack.WebHost.Endpoints.Tests
             Assert.That(response.Id, Is.EqualTo("id"));
             Assert.That(response.Data, Is.EqualTo("data"));
         }
+
+        [Test]
+        public void Can_download_route_with_dot_seperator_and_extension()
+        {
+            var response = Config.AbsoluteBaseUri.CombineWith("/pics/100x100/1.png")
+                .GetJsonFromUrl()
+                .FromJson<GetPngPic>();
+
+            Assert.That(response.Size, Is.EqualTo("100x100"));
+            Assert.That(response.Id, Is.EqualTo("1"));
+        }
+
+        [Test]
+        public void Can_download_route_with_dot_seperator_and_extension_with_jsonserviceclient()
+        {
+            var client = new JsonServiceClient(Config.AbsoluteBaseUri);
+            var request = new GetPngPic {
+                Id = "1",
+                Size = "100x100",
+            };
+
+            Assert.That(request.ToGetUrl(), Is.EqualTo("/pics/100x100/1.png"));
+
+            var response = client.Get<GetPngPic>(request);
+
+            Assert.That(response.Size, Is.EqualTo("100x100"));
+            Assert.That(response.Id, Is.EqualTo("1"));
+        }
     }
 
     public class RouteAppHost : AppHostHttpListenerBase
@@ -128,6 +172,17 @@ namespace ServiceStack.WebHost.Endpoints.Tests
             });
 
             Plugins.Add(new CsvFormat()); //required to allow .csv
+
+            Plugins.RemoveAll(x => x is MarkdownFormat);
+
+            ContentTypes.Register(MimeTypes.PlainText,
+                (req, o, stream) => JsonSerializer.SerializeToStream(o.GetType(), stream),
+                JsonSerializer.DeserializeFromStream);
+
+            PreRequestFilters.Add((req, res) => {
+                if (req.ContentType.MatchesContentType(MimeTypes.PlainText))
+                    req.ResponseContentType = MimeTypes.Json;
+            });
         }
     }
 
@@ -145,6 +200,14 @@ namespace ServiceStack.WebHost.Endpoints.Tests
         public string Data { get; set; }
     }
 
+    [Route("/pics/{Size}/{Id}.png", "GET")]
+    public class GetPngPic
+    {
+        public string Id { get; set; }
+
+        public string Size { get; set; }
+    }
+
     public class CustomRouteService : IService
     {
         public object Any(CustomRoute request)
@@ -153,6 +216,11 @@ namespace ServiceStack.WebHost.Endpoints.Tests
         }
 
         public object Any(CustomRouteDot request)
+        {
+            return request;
+        }
+
+        public object Any(GetPngPic request)
         {
             return request;
         }
@@ -230,6 +298,42 @@ namespace ServiceStack.WebHost.Endpoints.Tests
         public object Any(ModifiedRoute request)
         {
             return request;
+        }
+    }
+
+    [TestFixture]
+    public class InvalidRouteTests
+    {
+        public class UnknownRoute { }
+
+        class InvalidRoutesAppHost : AppSelfHostBase
+        {
+            public InvalidRoutesAppHost() : base(typeof(InvalidRoutesAppHost).Name, typeof(InvalidRoutesAppHost).Assembly) { }
+
+            public override void Configure(Container container)
+            {
+                Routes.Add<UnknownRoute>("/unknownroute");
+            }
+        }
+
+        [Test]
+        public void Throws_error_when_registering_route_for_unknown_Service()
+        {
+            using (var appHost = new InvalidRoutesAppHost()
+                .Init()
+                .Start(Config.AbsoluteBaseUri))
+            {
+                try
+                {
+                    var json = Config.AbsoluteBaseUri.CombineWith("/unknownroute").GetJsonFromUrl();
+                    json.PrintDump();
+                    Assert.Fail("Should throw");
+                }
+                catch (WebException ex)
+                {
+                    Assert.That(ex.GetStatus(), Is.EqualTo(HttpStatusCode.MethodNotAllowed));
+                }
+            }
         }
     }
 }

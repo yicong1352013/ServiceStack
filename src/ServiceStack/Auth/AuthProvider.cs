@@ -95,8 +95,14 @@ namespace ServiceStack.Auth
 
             service.RemoveSession();
 
+            var feature = HostContext.GetPlugin<AuthFeature>();
+            if (feature != null && feature.DeleteSessionCookiesOnLogout)
+            {
+                service.Request.Response.DeleteSessionCookies();
+            }
+
             if (service.Request.ResponseContentType == MimeTypes.Html && !String.IsNullOrEmpty(referrerUrl))
-                return service.Redirect(LogoutUrlFilter(this, referrerUrl.AddParam("s", "-1")));
+                return service.Redirect(LogoutUrlFilter(this, referrerUrl.SetParam("s", "-1")));
 
             return new AuthenticateResponse();
         }
@@ -158,80 +164,78 @@ namespace ServiceStack.Auth
                 authInfo.ForEach((x, y) => tokens.Items[x] = y);
             }
 
+            var authRepo = authService.TryResolve<IAuthRepository>();
+
+            if (CustomValidationFilter != null)
+            {
+                var ctx = new AuthContext
+                {
+                    Service = authService,
+                    AuthProvider = this,
+                    Session = session,
+                    AuthTokens = tokens,
+                    AuthInfo = authInfo,
+                    AuthRepository = authRepo,
+                };
+                var response = CustomValidationFilter(ctx);
+                if (response != null)
+                {
+                    authService.RemoveSession();
+                    return response;
+                }
+            }
+
+            if (authRepo != null)
+            {
+                var failed = ValidateAccount(authService, authRepo, session, tokens);
+                if (failed != null)
+                {
+                    authService.RemoveSession();
+                    return failed;
+                }
+
+                if (hasTokens)
+                {
+                    var authDetails = authRepo.CreateOrMergeAuthSession(session, tokens);
+                    session.UserAuthId = authDetails.UserAuthId.ToString();
+
+                    var firstTimeAuthenticated = authDetails.CreatedDate == authDetails.ModifiedDate;
+                    if (firstTimeAuthenticated)
+                    {
+                        session.OnRegistered(authService.Request, session, authService);
+                        AuthEvents.OnRegistered(authService.Request, session, authService);
+                    }
+                }
+
+                authRepo.LoadUserAuth(session, tokens);
+
+                foreach (var oAuthToken in session.ProviderOAuthAccess)
+                {
+                    var authProvider = AuthenticateService.GetAuthProvider(oAuthToken.Provider);
+                    if (authProvider == null) continue;
+                    var userAuthProvider = authProvider as OAuthProvider;
+                    if (userAuthProvider != null)
+                    {
+                        userAuthProvider.LoadUserOAuthProvider(session, oAuthToken);
+                    }
+                }
+
+                var httpRes = authService.Request.Response as IHttpResponse;
+                if (session.UserAuthId != null && httpRes != null)
+                {
+                    httpRes.Cookies.AddPermanentCookie(HttpHeaders.XUserAuthId, session.UserAuthId);
+                }
+            }
+            else
+            {
+                if (hasTokens)
+                {
+                    session.UserAuthId = CreateOrMergeAuthSession(session, tokens);
+                }
+            }
+
             try
             {
-                var authRepo = authService.TryResolve<IAuthRepository>();
-
-                if (CustomValidationFilter != null)
-                {
-                    var ctx = new AuthContext
-                    {
-                        Service = authService,
-                        AuthProvider = this,
-                        Session = session,
-                        AuthTokens = tokens,
-                        AuthInfo = authInfo,
-                        AuthRepository = authRepo,
-                    };
-                    var response = CustomValidationFilter(ctx);
-                    if (response != null)
-                    {
-                        session.IsAuthenticated = false;
-                        authService.SaveSession(session, SessionExpiry);
-                        return response;
-                    }
-                }
-
-                if (authRepo != null)
-                {
-                    var failed = ValidateAccount(authService, authRepo, session, tokens);
-                    if (failed != null)
-                    {
-                        session.IsAuthenticated = false;
-                        authService.SaveSession(session, SessionExpiry);
-                        return failed;
-                    }
-
-                    if (hasTokens)
-                    {
-                        var authDetails = authRepo.CreateOrMergeAuthSession(session, tokens);
-                        session.UserAuthId = authDetails.UserAuthId.ToString();
-
-                        var firstTimeAuthenticated = authDetails.CreatedDate == authDetails.ModifiedDate;
-                        if (firstTimeAuthenticated)
-                        {
-                            session.OnRegistered(authService.Request, session, authService);
-                            AuthEvents.OnRegistered(authService.Request, session, authService);
-                        }
-                    }
-
-                    authRepo.LoadUserAuth(session, tokens);
-
-                    foreach (var oAuthToken in session.ProviderOAuthAccess)
-                    {
-                        var authProvider = AuthenticateService.GetAuthProvider(oAuthToken.Provider);
-                        if (authProvider == null) continue;
-                        var userAuthProvider = authProvider as OAuthProvider;
-                        if (userAuthProvider != null)
-                        {
-                            userAuthProvider.LoadUserOAuthProvider(session, oAuthToken);
-                        }
-                    }
-
-                    var httpRes = authService.Request.Response as IHttpResponse;
-                    if (session.UserAuthId != null && httpRes != null)
-                    {
-                        httpRes.Cookies.AddPermanentCookie(HttpHeaders.XUserAuthId, session.UserAuthId);
-                    }
-                }
-                else
-                {
-                    if (hasTokens)
-                    {
-                        session.UserAuthId = CreateOrMergeAuthSession(session, tokens);
-                    }
-                }
-
                 session.IsAuthenticated = true;
                 session.OnAuthenticated(authService, session, tokens, authInfo);
                 AuthEvents.OnAuthenticated(authService.Request, session, authService, tokens, authInfo);
@@ -373,17 +377,17 @@ namespace ServiceStack.Auth
 
             if (authFeature != null && authFeature.ValidateUniqueUserNames && UserNameAlreadyExists(authRepo, userAuth, tokens))
             {
-                return authService.Redirect(FailedRedirectUrlFilter(this, GetReferrerUrl(authService, session).AddParam("f", "UserNameAlreadyExists")));
+                return authService.Redirect(FailedRedirectUrlFilter(this, GetReferrerUrl(authService, session).SetParam("f", "UserNameAlreadyExists")));
             }
 
             if (authFeature != null && authFeature.ValidateUniqueEmails && EmailAlreadyExists(authRepo, userAuth, tokens))
             {
-                return authService.Redirect(FailedRedirectUrlFilter(this, GetReferrerUrl(authService, session).AddParam("f", "EmailAlreadyExists")));
+                return authService.Redirect(FailedRedirectUrlFilter(this, GetReferrerUrl(authService, session).SetParam("f", "EmailAlreadyExists")));
             }
 
             if (IsAccountLocked(authRepo, userAuth, tokens))
             {
-                return authService.Redirect(FailedRedirectUrlFilter(this, GetReferrerUrl(authService, session).AddParam("f", "AccountLocked")));
+                return authService.Redirect(FailedRedirectUrlFilter(this, GetReferrerUrl(authService, session).SetParam("f", "AccountLocked")));
             }
 
             return null;
@@ -403,8 +407,8 @@ namespace ServiceStack.Auth
             if (referrerUrl.IsNullOrEmpty()
                 || referrerUrl.IndexOf("/auth", StringComparison.OrdinalIgnoreCase) >= 0)
                 referrerUrl = this.RedirectUrl
-                    ?? HttpHandlerFactory.GetBaseUrl()
-                    ?? requestUri.Substring(0, requestUri.IndexOf("/", "https://".Length + 1, StringComparison.Ordinal));
+                    ?? authService.Request.GetBaseUrl()
+                    ?? requestUri.InferBaseUrl();
 
             return referrerUrl;
         }
@@ -440,6 +444,11 @@ namespace ServiceStack.Auth
                     "Required dependency IAuthRepository or IUserAuthRepository could not be found.");
 
             return userAuthRepo;
+        }
+
+        public static string SanitizeOAuthUrl(this string url)
+        {
+            return (url ?? "").Replace("\\/", "/");
         }
     }
 

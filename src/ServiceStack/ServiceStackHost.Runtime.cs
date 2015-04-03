@@ -362,7 +362,7 @@ namespace ServiceStack
         {
             if (Config.AdminAuthSecret != null)
             {
-                var authSecret = httpReq.GetParam("authsecret");
+                var authSecret = httpReq.GetParam(Keywords.AuthSecret);
                 return authSecret == Config.AdminAuthSecret;
             }
 
@@ -403,9 +403,14 @@ namespace ServiceStack
             httpReq.Items[SessionFeature.RequestItemsSessionKey] = session;
         }
 
-        public virtual IRequest GetCurrentRequest()
+        public virtual IRequest TryGetCurrentRequest()
         {
-            throw new NotImplementedException(ErrorMessages.HostDoesNotSupportSingletonRequest);
+            return null;
+        }
+
+        public virtual object OnAfterExecute(IRequest req, object requestDto, object response)
+        {
+            return response;
         }
     }
 

@@ -104,6 +104,12 @@ namespace ServiceStack
             get { return Config.DebugMode; }
         }
 
+        public static bool TestMode
+        {
+            get { return ServiceStackHost.Instance != null && ServiceStackHost.Instance.TestMode; }
+            set { ServiceStackHost.Instance.TestMode = value; }
+        }
+
         public static List<HttpHandlerResolverDelegate> CatchAllHandlers
         {
             get { return AssertAppHost().CatchAllHandlers; }
@@ -172,13 +178,13 @@ namespace ServiceStack
         /// <summary>
         /// Call to signal the completion of a ServiceStack-handled Request
         /// </summary>
-        internal static void CompleteRequest()
+        internal static void CompleteRequest(IRequest request)
         {
             try
             {
-                AssertAppHost().OnEndRequest();
+                AssertAppHost().OnEndRequest(request);
             }
-            catch (Exception ex) { }
+            catch (Exception) { }
         }
 
         public static IServiceRunner<TRequest> CreateServiceRunner<TRequest>(ActionContext actionContext)
@@ -374,7 +380,16 @@ namespace ServiceStack
 
         public static IRequest GetCurrentRequest()
         {
-            return AssertAppHost().GetCurrentRequest();
+            var req = AssertAppHost().TryGetCurrentRequest();
+            if (req == null)
+                throw new NotImplementedException(ErrorMessages.HostDoesNotSupportSingletonRequest);
+
+            return req;
+        }
+
+        public static IRequest TryGetCurrentRequest()
+        {
+            return AssertAppHost().TryGetCurrentRequest();
         }
     }
 }

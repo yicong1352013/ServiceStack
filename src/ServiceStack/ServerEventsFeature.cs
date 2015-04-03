@@ -32,6 +32,7 @@ namespace ServiceStack
         public Action<IResponse, string> OnPublish { get; set; }
         public bool NotifyChannelOfSubscriptions { get; set; }
         public bool LimitToAuthenticatedUsers { get; set; }
+        public bool ValidateUserAddress { get; set; }
 
         public ServerEventsFeature()
         {
@@ -44,6 +45,7 @@ namespace ServiceStack
             HeartbeatInterval = TimeSpan.FromSeconds(10);
 
             NotifyChannelOfSubscriptions = true;
+            ValidateUserAddress = true;
         }
 
         public void Register(IAppHost appHost)
@@ -76,6 +78,23 @@ namespace ServiceStack
             {
                 appHost.RegisterService(typeof(ServerEventsSubscribersService), SubscribersPath);
             }
+        }
+
+        public bool CanAccessSubscription(IRequest req, string subscriptionId)
+        {
+            if (!ValidateUserAddress)
+                return true;
+
+            var sub = req.TryResolve<IServerEvents>().GetSubscriptionInfo(subscriptionId);
+            return sub.UserAddress == req.UserHostAddress;
+        }
+
+        public bool CanAccessSubscription(IRequest req, SubscriptionInfo sub)
+        {
+            if (!ValidateUserAddress)
+                return true;
+
+            return sub.UserAddress == null || sub.UserAddress == req.UserHostAddress;
         }
     }
 
@@ -144,6 +163,7 @@ namespace ServiceStack
                 DisplayName = displayName,
                 SessionId = req.GetPermanentSessionId(),
                 IsAuthenticated = session != null && session.IsAuthenticated,
+                UserAddress = req.UserHostAddress,
                 OnPublish = feature.OnPublish,
                 Meta = {
                     { "userId", userId },
@@ -156,11 +176,14 @@ namespace ServiceStack
             if (feature.OnCreated != null)
                 feature.OnCreated(subscription, req);
 
+            if (req.Response.IsClosed)
+                return EmptyTask; //Allow short-circuiting in OnCreated callback
+
             var heartbeatUrl = req.ResolveAbsoluteUrl("~/".CombineWith(feature.HeartbeatPath))
                 .AddQueryParam("id", subscriptionId);
             var unRegisterUrl = req.ResolveAbsoluteUrl("~/".CombineWith(feature.UnRegisterPath))
                 .AddQueryParam("id", subscriptionId);
-            var privateArgs = new Dictionary<string, string>(subscription.Meta) {
+            subscription.ConnectArgs = new Dictionary<string, string>(subscription.Meta) {
                 {"id", subscriptionId },
                 {"unRegisterUrl", unRegisterUrl},
                 {"heartbeatUrl", heartbeatUrl},
@@ -169,9 +192,9 @@ namespace ServiceStack
             };
 
             if (feature.OnConnect != null)
-                feature.OnConnect(subscription, privateArgs);
+                feature.OnConnect(subscription, subscription.ConnectArgs);
 
-            serverEvents.Register(subscription, privateArgs);
+            serverEvents.Register(subscription, subscription.ConnectArgs);
 
             var tcs = new TaskCompletionSource<bool>();
 
@@ -200,12 +223,25 @@ namespace ServiceStack
 
             res.ApplyGlobalResponseHeaders();
 
+            var serverEvents = req.TryResolve<IServerEvents>();
+
             var feature = HostContext.GetPlugin<ServerEventsFeature>();
             if (feature.OnHeartbeatInit != null)
                 feature.OnHeartbeatInit(req);
 
+            if (req.Response.IsClosed)
+                return EmptyTask;
+
             var subscriptionId = req.QueryString["id"];
-            if (!req.TryResolve<IServerEvents>().Pulse(subscriptionId))
+            if (!feature.CanAccessSubscription(req, subscriptionId))
+            {
+                res.StatusCode = 403;
+                res.StatusDescription = "Invalid User Address";
+                res.EndHttpHandlerRequest(skipHeaders: true);
+                return EmptyTask;
+            }
+
+            if (!serverEvents.Pulse(subscriptionId))
             {
                 res.StatusCode = 404;
                 res.StatusDescription = "Subscription {0} does not exist".Fmt(subscriptionId);
@@ -254,8 +290,13 @@ namespace ServiceStack
         public object Any(UnRegisterEventSubscriber request)
         {
             var subscription = ServerEvents.GetSubscriptionInfo(request.Id);
+
             if (subscription == null)
                 throw HttpError.NotFound(ErrorMessages.SubscriptionNotExistsFmt.Fmt(request.Id));
+
+            var feature = HostContext.GetPlugin<ServerEventsFeature>();
+            if (!feature.CanAccessSubscription(base.Request, subscription))
+                throw HttpError.Forbidden(ErrorMessages.SubscriptionForbiddenFmt.Fmt(request.Id));
 
             ServerEvents.UnRegister(subscription.SubscriptionId);
 
@@ -381,6 +422,7 @@ namespace ServiceStack
         string DisplayName { get; }
         string SessionId { get; }
         string SubscriptionId { get; }
+        string UserAddress { get; set; }
         bool IsAuthenticated { get; set; }
 
         Action<IEventSubscription> OnUnsubscribe { get; set; }
@@ -400,9 +442,11 @@ namespace ServiceStack
         public string DisplayName { get; set; }
         public string SessionId { get; set; }
         public string SubscriptionId { get; set; }
+        public string UserAddress { get; set; }
         public bool IsAuthenticated { get; set; }
 
         public Dictionary<string, string> Meta { get; set; }
+        public Dictionary<string, string> ConnectArgs { get; set; }
     }
 
     public class MemoryServerEvents : IServerEvents
@@ -610,6 +654,9 @@ namespace ServiceStack
 
                 foreach (var sub in subs)
                 {
+                    if (sub == null)
+                        continue;
+
                     if (!alreadyAdded.Contains(sub.SubscriptionId))
                     {
                         ret.Add(sub.Meta);
@@ -833,6 +880,7 @@ namespace ServiceStack
                 DisplayName = sub.DisplayName,
                 SessionId = sub.SessionId,
                 SubscriptionId = sub.SubscriptionId,
+                UserAddress = sub.UserAddress,
                 IsAuthenticated = sub.IsAuthenticated,
                 Meta = sub.Meta,
             };

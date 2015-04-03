@@ -247,7 +247,7 @@ namespace ServiceStack.WebHost.IntegrationTests.Tests
             }
             catch (Exception ex)
             {
-                if (ex.IsUnauthorized())
+                if (ex.IsUnauthorized() || ex.IsAny400()) //redirect to login
                     return;
 
                 throw;
@@ -257,7 +257,8 @@ namespace ServiceStack.WebHost.IntegrationTests.Tests
         [Test]
         public void Can_access_Admin_service_with_AuthSecret()
         {
-            BaseUri.AppendPath("requiresadmin").AddQueryParam("authsecret", AuthSecret).GetStringFromUrl();
+            BaseUri.AppendPath("requiresadmin")
+                .AddQueryParam("authsecret", AuthSecret).GetStringFromUrl();
         }
 
 	}

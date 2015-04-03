@@ -35,7 +35,7 @@ namespace ServiceStack.Host.AspNet
             this.request = httpContext.Request;
             try
             {
-                this.response = new AspNetResponse(httpContext.Response);
+                this.response = new AspNetResponse(httpContext.Response, this);
             }
             catch (Exception ex)
             {
@@ -98,7 +98,7 @@ namespace ServiceStack.Host.AspNet
 
         public string ContentType
         {
-            get { return request.ContentType; }
+            get { return request.ContentType.ToLowerSafe(); }
         }
         
         private string httpMethod;
@@ -272,7 +272,7 @@ namespace ServiceStack.Host.AspNet
                 {
                     return request.UserHostAddress;
                 }
-                catch (Exception ignore)
+                catch (Exception)
                 {
                     return null; //Can throw in Mono FastCGI Host
                 }

@@ -15,6 +15,7 @@ namespace ServiceStack
         public const string RequestItemsSessionKey = "__session";
         public static TimeSpan DefaultSessionExpiry = TimeSpan.FromDays(7 * 2); //2 weeks
         public TimeSpan SessionExpiry { get; set; }
+        public static bool VerifyCachedSessionId = false;
 
         public SessionFeature()
         {
@@ -34,11 +35,11 @@ namespace ServiceStack
 
         public static void AddSessionIdToRequestFilter(IRequest req, IResponse res, object requestDto)
         {
-            if (req.GetItemOrCookie(SessionId) == null)
+            if (req.GetTemporarySessionId() == null)
             {
                 res.CreateTemporarySessionId(req);
             }
-            if (req.GetItemOrCookie(PermanentSessionId) == null)
+            if (req.GetPermanentSessionId() == null)
             {
                 res.CreatePermanentSessionId(req);
             }

@@ -44,6 +44,7 @@
   <ItemGroup>
     <Compile Include="AttributeBase.cs" />
     <Compile Include="Auth\IUserAuth.cs" />
+    <Compile Include="AutoQueryViewerAttributes.cs" />
     <Compile Include="Caching\ICacheClient.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -133,12 +134,14 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Data\OptimisticConcurrencyException.cs" />
+    <Compile Include="ICompressor.cs" />
     <Compile Include="IO\IEndpoint.cs" />
     <Compile Include="IQuery.cs" />
     <Compile Include="IReceiver.cs" />
     <Compile Include="IRestGateway.cs" />
     <Compile Include="Logging\DebugLogFactory.cs" />
     <Compile Include="Logging\DebugLogger.cs" />
+    <Compile Include="Logging\GenericLogger.cs" />
     <Compile Include="Logging\NullDebugLogger.cs" />
     <Compile Include="Logging\NullLogFactory.cs" />
     <Compile Include="Logging\StringBuilderLog.cs" />

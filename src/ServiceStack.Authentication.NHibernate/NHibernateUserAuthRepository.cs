@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Globalization;
 using ServiceStack.Auth;
@@ -84,12 +85,8 @@ namespace ServiceStack.Authentication.NHibernate
 
         private void LoadUserAuth(IAuthSession session, UserAuth userAuth)
         {
-            if (userAuth == null) return;
-
-            session.PopulateWith(userAuth);
-            session.UserAuthId = userAuth.Id.ToString(CultureInfo.InvariantCulture);
-            session.ProviderOAuthAccess = GetUserAuthDetails(session.UserAuthId)
-                .ConvertAll(x => (IAuthTokens)x);
+            session.PopulateSession(userAuth,
+                GetUserAuthDetails(session.UserAuthId).ConvertAll(x => (IAuthTokens)x));
         }
 
         public bool TryAuthenticate(string userName, string password, out string userId)
@@ -198,14 +195,21 @@ namespace ServiceStack.Authentication.NHibernate
                     .OrderBy(x => x.ModifiedDate).Asc
                     .List();
 
-                var providerList = new List<IUserAuthDetails>();
-                foreach (var item in value)
-                {
-                    providerList.Add(item);
-                }
+                return value.Cast<IUserAuthDetails>().ToList();
+            }
+        }
 
-                return providerList;
-                //return new List<UserAuthDetails>(value);
+        public void DeleteUserAuth(string userAuthId)
+        {
+            using (var nhSession = GetCurrentSessionFn(sessionFactory))
+            {
+                int authId = int.Parse(userAuthId);
+
+                nhSession.Delete(nhSession.QueryOver<UserAuthNHibernate>()
+                    .Where(x => x.Id == authId));
+
+                nhSession.Delete(nhSession.QueryOver<UserAuthDetailsNHibernate>()
+                    .Where(x => x.UserAuthId == authId));
             }
         }
 

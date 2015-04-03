@@ -4,6 +4,7 @@ using ServiceStack.Auth;
 using ServiceStack.Caching;
 using ServiceStack.Configuration;
 using ServiceStack.Host;
+using ServiceStack.Logging;
 using ServiceStack.Redis;
 using ServiceStack.Testing;
 using ServiceStack.Web;
@@ -12,6 +13,8 @@ namespace ServiceStack
 {
     public static class ServiceExtensions
     {
+        public static ILog Log = LogManager.GetLogger(typeof(ServiceExtensions));
+
         public static IHttpResult Redirect(this IServiceBase service, string url)
         {
             return service.Redirect(url, "Moved Temporarily");
@@ -64,7 +67,7 @@ namespace ServiceStack
 
         public static void SaveSession(this IServiceBase service, IAuthSession session, TimeSpan? expiresIn = null)
         {
-            if (service == null) return;
+            if (service == null || session == null) return;
 
             service.Request.SaveSession(session, expiresIn);
         }
@@ -123,26 +126,49 @@ namespace ServiceStack
 
         [Obsolete("Use SessionFeature.RequestItemsSessionKey")]
         public const string RequestItemsSessionKey = SessionFeature.RequestItemsSessionKey;
+
+        private static IAuthSession FilterSession(IAuthSession session, string withSessionId)
+        {
+            if (session == null || !SessionFeature.VerifyCachedSessionId)
+                return session;
+
+            if (session.Id == withSessionId)
+                return session;
+
+            if (Log.IsDebugEnabled)
+            {
+                Log.Debug("ignoring cached sessionId '{0}' which is different to request '{1}'"
+                    .Fmt(session.Id, withSessionId));
+            }
+            return null;
+        }
+
         public static IAuthSession GetSession(this IRequest httpReq, bool reload = false)
         {
             if (httpReq == null) return null;
 
-            var mockSession = httpReq.TryResolve<IAuthSession>(); //testing
-            if (mockSession != null)
-                return mockSession;
+            if (HostContext.TestMode)
+            {
+                var mockSession = httpReq.TryResolve<IAuthSession>(); //testing
+                if (mockSession != null)
+                    return mockSession;
+            }
 
             object oSession = null;
             if (!reload)
                 httpReq.Items.TryGetValue(SessionFeature.RequestItemsSessionKey, out oSession);
 
-            if (oSession != null)
-                return (IAuthSession)oSession;
+            var sessionId = httpReq.GetSessionId();
+            var cachedSession = FilterSession(oSession as IAuthSession, sessionId);
+            if (cachedSession != null)
+            {
+                return cachedSession;
+            }
 
             using (var cache = httpReq.GetCacheClient())
             {
-                var sessionId = httpReq.GetSessionId();
                 var sessionKey = SessionFeature.GetSessionKey(sessionId);
-                var session = (sessionKey != null ? cache.Get<IAuthSession>(sessionKey) : null)
+                var session = (sessionKey != null ? FilterSession(cache.Get<IAuthSession>(sessionKey), sessionId) : null)
                     ?? SessionFeature.CreateNewSession(httpReq, sessionId);
 
                 if (httpReq.Items.ContainsKey(SessionFeature.RequestItemsSessionKey))

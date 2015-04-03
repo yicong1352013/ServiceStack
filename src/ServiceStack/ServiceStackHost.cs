@@ -41,6 +41,8 @@ namespace ServiceStack
         public DateTime StartedAt { get; set; }
         public DateTime? AfterInitAt { get; set; }
         public DateTime? ReadyAt { get; set; }
+        public bool TestMode { get; set; }
+
         public bool HasStarted
         {
             get { return ReadyAt != null; }
@@ -144,15 +146,7 @@ namespace ServiceStack
 
             if (VirtualPathProvider == null)
             {
-                var pathProviders = new List<IVirtualPathProvider> {
-                    new FileSystemVirtualPathProvider(this, Config.WebHostPhysicalPath)
-                };
-
-                pathProviders.AddRange(Config.EmbeddedResourceBaseTypes.Distinct().Map(x =>
-                    new ResourceVirtualPathProvider(this, x)));
-
-                pathProviders.AddRange(Config.EmbeddedResourceSources.Distinct().Map(x =>
-                    new ResourceVirtualPathProvider(this, x)));
+                var pathProviders = GetVirtualPathProviders();
 
                 VirtualPathProvider = pathProviders.Count > 1
                     ? new MultiVirtualPathProvider(this, pathProviders.ToArray())
@@ -167,6 +161,21 @@ namespace ServiceStack
             return this;
         }
 
+        public virtual List<IVirtualPathProvider> GetVirtualPathProviders()
+        {
+            var pathProviders = new List<IVirtualPathProvider> {
+                new FileSystemVirtualPathProvider(this, Config.WebHostPhysicalPath)
+            };
+
+            pathProviders.AddRange(Config.EmbeddedResourceBaseTypes.Distinct()
+                .Map(x => new ResourceVirtualPathProvider(this, x)));
+
+            pathProviders.AddRange(Config.EmbeddedResourceSources.Distinct()
+                .Map(x => new ResourceVirtualPathProvider(this, x)));
+
+            return pathProviders;
+        }
+
         public virtual ServiceStackHost Start(string urlBase)
         {
             throw new NotImplementedException("Start(listeningAtUrlBase) is not supported by this AppHost");
@@ -176,12 +185,15 @@ namespace ServiceStack
         /// Retain the same behavior as ASP.NET and redirect requests to directores 
         /// without a trailing '/'
         /// </summary>
-        public IHttpHandler RedirectDirectory(IHttpRequest request)
+        public virtual IHttpHandler RedirectDirectory(IHttpRequest request)
         {
             var dir = request.GetVirtualNode() as IVirtualDirectory;
             if (dir != null)
             {
-                if (!request.PathInfo.EndsWith("/"))
+                //Only redirect GET requests for directories which don't have services registered at the same path
+                if (!request.PathInfo.EndsWith("/")
+                    && request.Verb == HttpMethods.Get
+                    && ServiceController.GetRestPathForRequest(request.Verb, request.PathInfo) == null)
                 {
                     return new RedirectHttpHandler
                     {
@@ -431,10 +443,14 @@ namespace ServiceStack
 
             var specifiedContentType = config.DefaultContentType; //Before plugins loaded
 
-            LoadPlugin(Plugins.ToArray());
-            pluginsLoaded = true;
+            var plugins = Plugins.ToArray();
+            delayLoadPlugin = true;
+            LoadPluginsInternal(plugins);
 
             AfterPluginsLoaded(specifiedContentType);
+
+            if (!TestMode && Container.Exists<IAuthSession>())
+                throw new Exception(ErrorMessages.ShouldNotRegisterAuthSession);
 
             if (!Container.Exists<IAppSettings>())
                 Container.Register(AppSettings);
@@ -525,22 +541,6 @@ namespace ServiceStack
             ServiceController.AfterInit();
         }
 
-        private bool pluginsLoaded;
-        public void AddPlugin(params IPlugin[] plugins)
-        {
-            if (pluginsLoaded)
-            {
-                LoadPlugin(plugins);
-            }
-            else
-            {
-                foreach (var plugin in plugins)
-                {
-                    Plugins.Add(plugin);
-                }
-            }
-        }
-
         public virtual void Release(object instance)
         {
             try
@@ -557,10 +557,13 @@ namespace ServiceStack
                         disposable.Dispose();
                 }
             }
-            catch { /*ignore*/ }
+            catch (Exception ex)
+            {
+                Log.Error("ServiceStackHost.Release", ex);
+            }
         }
 
-        public virtual void OnEndRequest()
+        public virtual void OnEndRequest(IRequest request = null)
         {
             var disposables = RequestContext.Instance.Items.Values;
             foreach (var item in disposables)
@@ -604,6 +607,9 @@ namespace ServiceStack
 
         public virtual string ResolveAbsoluteUrl(string virtualPath, IRequest httpReq)
         {
+            if (httpReq == null)
+                return (Config.WebHostUrl ?? "/").CombineWith(virtualPath.TrimStart('~'));
+
             return httpReq.GetAbsoluteUrl(virtualPath); //Http Listener, TODO: ASP.NET overrides
         }
 
@@ -630,7 +636,24 @@ namespace ServiceStack
                 ?? ResolveVirtualDirectory(virtualPath, httpReq);
         }
 
+        private bool delayLoadPlugin;
         public virtual void LoadPlugin(params IPlugin[] plugins)
+        {
+            if (delayLoadPlugin)
+            {
+                LoadPluginsInternal(plugins);
+                Plugins.AddRange(plugins);
+            }
+            else
+            {
+                foreach (var plugin in plugins)
+                {
+                    Plugins.Add(plugin);
+                }
+            }
+        }
+
+        internal virtual void LoadPluginsInternal(params IPlugin[] plugins)
         {
             foreach (var plugin in plugins)
             {
@@ -659,6 +682,16 @@ namespace ServiceStack
         public virtual object ExecuteService(object requestDto, RequestAttributes requestAttributes)
         {
             return ServiceController.Execute(requestDto, new BasicRequest(requestDto, requestAttributes));
+        }
+
+        public virtual object ExecuteMessage(IMessage mqMessage)
+        {
+            return ServiceController.ExecuteMessage(mqMessage, new BasicRequest(mqMessage));
+        }
+
+        public virtual object ExecuteMessage(IMessage dto, IRequest req)
+        {
+            return ServiceController.ExecuteMessage(dto, req);
         }
 
         public virtual void RegisterService(Type serviceType, params string[] atRestPaths)

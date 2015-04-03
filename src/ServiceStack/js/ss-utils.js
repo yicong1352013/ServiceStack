@@ -348,6 +348,9 @@
             var msg = json ? JSON.parse(json) : null;
 
             parts = $.ss.splitOnFirst(selector, '.');
+            if (parts.length <= 1)
+                throw "invalid selector format: " + selector;
+
             var op = parts[0],
                 target = parts[1].replace(new RegExp("%20",'g')," ");
 
@@ -365,11 +368,20 @@
                             window.clearInterval(opt.heartbeat);
                         }
                         opt.heartbeat = window.setInterval(function () {
+                            if ($.ss.eventSource.readyState == 2) //CLOSED
+                            {
+                                window.clearInterval(opt.heartbeat);
+                                var stopFn = $.ss.handlers["onStop"];
+                                if (stopFn != null)
+                                    stopFn.apply($.ss.eventSource);
+                                return;
+                            }
                             $.ajax({
                                 type: "POST",
                                 url: opt.heartbeatUrl,
                                 data: null,
-                                success: function (r) { },
+                                dataType: "text",
+                                success: function(r) {},
                                 error: function () {
                                     $.ss.reconnectServerEvents({errorArgs:arguments});
                                 }

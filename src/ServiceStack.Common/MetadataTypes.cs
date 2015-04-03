@@ -16,9 +16,12 @@ namespace ServiceStack
             bool addIndexesToDataMembers = false,
             string addDefaultXmlNamespace = null,
             string baseClass = null,
+            string package = null,
             bool addResponseStatus = false,
             bool addServiceStackTypes = true,
             bool addModelExtensions = true,
+            bool addPropertyAccessors = true,
+            bool settersReturnThis = true,
             bool makePropertiesOptional = true,
             bool makeDataContractsExtensible = false,
             bool initializeCollections = true,
@@ -32,12 +35,15 @@ namespace ServiceStack
             AddDataContractAttributes = addDataContractAttributes;
             AddDefaultXmlNamespace = addDefaultXmlNamespace;
             BaseClass = baseClass;
+            Package = package;
             MakeDataContractsExtensible = makeDataContractsExtensible;
             AddIndexesToDataMembers = addIndexesToDataMembers;
             InitializeCollections = initializeCollections;
             AddResponseStatus = addResponseStatus;
             AddServiceStackTypes = addServiceStackTypes;
             AddModelExtensions = addModelExtensions;
+            AddPropertyAccessors = addPropertyAccessors;
+            SettersReturnThis = settersReturnThis;
             MakePropertiesOptional = makePropertiesOptional;
             AddImplicitVersion = addImplicitVersion;
         }
@@ -46,6 +52,7 @@ namespace ServiceStack
         public bool MakePartial { get; set; }
         public bool MakeVirtual { get; set; }
         public string BaseClass { get; set; }
+        public string Package { get; set; }
         public bool AddReturnMarker { get; set; }
         public bool AddDescriptionAsComments { get; set; }
         public bool AddDataContractAttributes { get; set; }
@@ -54,13 +61,14 @@ namespace ServiceStack
         public bool AddResponseStatus { get; set; }
         public bool AddServiceStackTypes { get; set; }
         public bool AddModelExtensions { get; set; }
+        public bool AddPropertyAccessors { get; set; }
+        public bool SettersReturnThis { get; set; }
         public bool MakePropertiesOptional { get; set; }
         public string AddDefaultXmlNamespace { get; set; }
         public bool MakeDataContractsExtensible { get; set; }
         public bool InitializeCollections { get; set; }
         public List<string> DefaultNamespaces { get; set; }
-        public List<string> DefaultTypeScriptNamespaces { get; set; }
-        public List<string> DefaultSwiftNamespaces { get; set; }
+        public List<string> DefaultImports { get; set; }
         public List<string> IncludeTypes { get; set; }
         public List<string> ExcludeTypes { get; set; }
 

@@ -8,6 +8,7 @@ using ServiceStack.DataAnnotations;
 
 namespace Check.ServiceModel.Operations
 {
+    [Route("/hello")]
     [Route("/hello/{Name}")]
     public class Hello
     {
@@ -311,6 +312,9 @@ namespace Check.ServiceModel.Types
         public Dictionary<string, string> StringMap { get; set; }
         public Dictionary<int, string> IntStringMap { get; set; }
         public SubType SubType { get; set; }
+
+        [DataMember(Name = "aliasedName")]
+        public string OriginalName { get; set; }
     }
 
     public class AllCollectionTypes

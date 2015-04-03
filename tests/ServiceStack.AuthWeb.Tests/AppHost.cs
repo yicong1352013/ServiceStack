@@ -16,12 +16,14 @@ using ServiceStack.Authentication.RavenDb;
 using ServiceStack.Caching;
 using ServiceStack.Configuration;
 using ServiceStack.Data;
+using ServiceStack.DataAnnotations;
 using ServiceStack.FluentValidation;
 using ServiceStack.Logging;
 using ServiceStack.MiniProfiler;
 using ServiceStack.MiniProfiler.Data;
 using ServiceStack.OrmLite;
 using ServiceStack.Razor;
+using ServiceStack.Redis;
 using ServiceStack.Text;
 using ServiceStack.Web;
 
@@ -49,26 +51,34 @@ namespace ServiceStack.AuthWeb.Tests
 
             container.Register(new DataSource());
 
-            container.Register<IDbConnectionFactory>(
-                new OrmLiteConnectionFactory(":memory:", SqliteDialect.Provider) {
-                    ConnectionFilter = x => new ProfiledDbConnection(x, Profiler.Current)
-                });
+            var UsePostgreSql = false;
+            if (UsePostgreSql)
+            {
+                container.Register<IDbConnectionFactory>(
+                    new OrmLiteConnectionFactory(
+                        "Server=localhost;Port=5432;User Id=test;Password=test;Database=test;Pooling=true;MinPoolSize=0;MaxPoolSize=200", 
+                        PostgreSqlDialect.Provider) {
+                            ConnectionFilter = x => new ProfiledDbConnection(x, Profiler.Current)
+                        });
+            }
+            else
+            {
+                container.Register<IDbConnectionFactory>(
+                    new OrmLiteConnectionFactory(":memory:", SqliteDialect.Provider) {
+                        ConnectionFilter = x => new ProfiledDbConnection(x, Profiler.Current)
+                    });
+            }
 
             using (var db = container.Resolve<IDbConnectionFactory>().Open())
             {
-                db.CreateTableIfNotExists<Rockstar>();
+                db.DropAndCreateTable<Rockstar>();
                 db.Insert(Rockstar.SeedData);
             }
 
             JsConfig.EmitCamelCaseNames = true;
 
-            //Register Typed Config some services might need to access
-            var appSettings = new AppSettings();
-
             //Register a external dependency-free 
             container.Register<ICacheClient>(new MemoryCacheClient());
-            //Configure an alt. distributed persistent cache that survives AppDomain restarts. e.g Redis
-            //container.Register<IRedisClientsManager>(c => new PooledRedisClientManager("localhost:6379"));
 
             //Enable Authentication an Registration
             ConfigureAuth(container);
@@ -93,10 +103,10 @@ namespace ServiceStack.AuthWeb.Tests
             Plugins.Add(new AuthFeature(
                 () => new CustomUserSession(), //Use your own typed Custom UserSession type
                 new IAuthProvider[] {
-                    new AspNetWindowsAuthProvider(this) {
-                        LoadUserAuthFilter = LoadUserAuthInfo,
-                        AllowAllWindowsAuthUsers = true
-                    }, 
+                    //new AspNetWindowsAuthProvider(this) {
+                    //    LoadUserAuthFilter = LoadUserAuthInfo,
+                    //    AllowAllWindowsAuthUsers = true
+                    //}, 
                     new CredentialsAuthProvider(),        //HTML Form post of UserName/Password credentials
                     new TwitterAuthProvider(appSettings),       //Sign-in with Twitter
                     new FacebookAuthProvider(appSettings),      //Sign-in with Facebook
@@ -108,6 +118,7 @@ namespace ServiceStack.AuthWeb.Tests
                     new GoogleOAuth2Provider(appSettings),      //Sign-in with Google OAuth2 Provider
                     new LinkedInOAuth2Provider(appSettings),    //Sign-in with LinkedIn OAuth2 Provider
                     new GithubAuthProvider(appSettings),        //Sign-in with GitHub OAuth Provider
+                    new FourSquareOAuth2Provider(appSettings),  //Sign-in with FourSquare OAuth2 Provider
                     new YandexAuthProvider(appSettings),        //Sign-in with Yandex OAuth Provider        
                     new VkAuthProvider(appSettings),            //Sign-in with VK.com OAuth Provider 
                     new OdnoklassnikiAuthProvider(appSettings), //Sign-in with Odnoklassniki OAuth Provider 
@@ -122,10 +133,11 @@ namespace ServiceStack.AuthWeb.Tests
             Plugins.Add(new RegistrationFeature());
 
             //override the default registration validation with your own custom implementation
-            Plugins.Add(new CustomRegisterPlugin());
+            //Plugins.Add(new CustomRegisterPlugin());
 
-            var authRepo = CreateOrmLiteAuthRepo(container, appSettings);
-            //var authRepo = CreateRavenDbAuthRepo(container, appSettings);
+            var authRepo = CreateOrmLiteAuthRepo(container, appSettings);    //works with / or /basic
+            //var authRepo = CreateRavenDbAuthRepo(container, appSettings);  //works with /basic
+            //var authRepo = CreateRedisAuthRepo(container, appSettings);    //works with /basic
             //AuthProvider.ValidateUniqueUserNames = false;
 
             try
@@ -150,7 +162,7 @@ namespace ServiceStack.AuthWeb.Tests
                     UserName = "mythz",
                 }, "test");
             }
-            catch (Exception ignoreExistingUser) {}
+            catch (Exception) {}
 
             Plugins.Add(new RequestLogsFeature());
         }
@@ -164,9 +176,26 @@ namespace ServiceStack.AuthWeb.Tests
             documentStore.Initialize();
 
             container.Register<IAuthRepository>(c =>
-                new RavenDbUserAuthRepository<CustomUserAuth,CustomUserAuthDetails>(c.Resolve<IDocumentStore>()));
+                new RavenDbUserAuthRepository<CustomUserAuth, CustomUserAuthDetails>(c.Resolve<IDocumentStore>()));
 
             return (IUserAuthRepository)container.Resolve<IAuthRepository>();
+        }
+
+        private static IUserAuthRepository CreateRedisAuthRepo(Container container, AppSettings appSettings)
+        {
+            container.Register<IRedisClientsManager>(c =>
+                new RedisManagerPool());
+
+            //Configure an alt. distributed persistent cache that survives AppDomain restarts. e.g Redis
+            container.Register(c => c.Resolve<IRedisClientsManager>().GetCacheClient());
+
+            container.Register<IAuthRepository>(c =>
+                new RedisAuthRepository(c.Resolve<IRedisClientsManager>()));
+
+            var authRepo = (IUserAuthRepository)container.Resolve<IAuthRepository>();
+            authRepo.InitSchema(); //unnecessary, but staying consistent
+            
+            return authRepo;
         }
 
         private static IUserAuthRepository CreateOrmLiteAuthRepo(Container container, AppSettings appSettings)
@@ -274,10 +303,16 @@ namespace ServiceStack.AuthWeb.Tests
 
     public class CustomUserSession : AuthUserSession
     {
+        public string ProfileUrl64 { get; set; }
+
         public override void OnAuthenticated(IServiceBase authService, IAuthSession session, IAuthTokens tokens, Dictionary<string, string> authInfo)
         {
+            base.OnAuthenticated(authService, session, tokens, authInfo);
+
             var jsv = authService.Request.Dto.Dump();
             "OnAuthenticated(): {0}".Print(jsv);
+
+            this.ProfileUrl64 = session.GetProfileUrl();
         }
 
         public override void OnRegistered(IRequest httpReq, IAuthSession session, IServiceBase service)

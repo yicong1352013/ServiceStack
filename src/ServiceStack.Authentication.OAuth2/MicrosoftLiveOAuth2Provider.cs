@@ -12,13 +12,13 @@ namespace ServiceStack.Authentication.OAuth2
             Microsoft Account OAuth2 Scopes from: https://msdn.microsoft.com/en-us/library/hh243646.aspx)
 
          */
-        public class MicrosoftOAuth2Provider : OAuth2Provider
+        public class MicrosoftLiveOAuth2Provider : OAuth2Provider
         {
             public const string Name = "MicrosoftOAuth";
 
             public const string Realm = "https://login.live.com/oauth20_authorize.srf";
 
-            public MicrosoftOAuth2Provider(IAppSettings appSettings)
+            public MicrosoftLiveOAuth2Provider(IAppSettings appSettings)
                 : base(appSettings, Realm, Name)
             {
                 this.AuthorizeUrl = this.AuthorizeUrl ?? Realm;
@@ -40,7 +40,7 @@ namespace ServiceStack.Authentication.OAuth2
                 var url = this.UserProfileUrl.AddQueryParam("access_token", accessToken);
                 string json = url.GetJsonFromUrl();
                 var obj = JsonObject.Parse(json);
-                var emails = JsonObject.Parse(obj.GetUnescaped("emails"));
+                var emails = obj.Object("emails");
                 var authInfo = new Dictionary<string, string>
             {
                 { "user_id", obj["id"] }, 

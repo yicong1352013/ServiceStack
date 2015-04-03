@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using ServiceStack.NativeTypes.CSharp;
 using ServiceStack.Text;
 using ServiceStack.Web;
 
@@ -17,6 +16,10 @@ namespace ServiceStack.NativeTypes.TypeScript
         {
             Config = config;
         }
+
+        public static List<string> DefaultImports = new List<string>
+        {
+        };
 
         public static Dictionary<string, string> TypeAliases = new Dictionary<string, string>
         {
@@ -37,23 +40,16 @@ namespace ServiceStack.NativeTypes.TypeScript
             {"List", "Array"},
         };
 
-        class CreateTypeOptions
-        {
-            public Func<string> ImplementsFn { get; set; }
-            public bool IsRequest { get; set; }
-            public bool IsResponse { get; set; }
-            public bool IsOperation { get { return IsRequest || IsResponse; } }
-            public bool IsType { get; set; }
-        }
-
         public string GetCode(MetadataTypes metadata, IRequest request, INativeTypesMetadata nativeTypes)
         {
-            var defaultNamespaces = Config.DefaultSwiftNamespaces.Safe();
-
             var typeNamespaces = new HashSet<string>();
             metadata.RemoveIgnoredTypes(Config);
             metadata.Types.Each(x => typeNamespaces.Add(x.Namespace));
             metadata.Operations.Each(x => typeNamespaces.Add(x.Request.Namespace));
+
+            var defaultImports = !Config.DefaultImports.IsEmpty()
+                ? Config.DefaultImports
+                : DefaultImports;
 
             // Look first for shortest Namespace ending with `ServiceModel` convention, else shortest ns
             var globalNamespace = Config.GlobalNamespace
@@ -77,7 +73,7 @@ namespace ServiceStack.NativeTypes.TypeScript
             sb.AppendLine("{0}AddImplicitVersion: {1}".Fmt(defaultValue("AddImplicitVersion"), Config.AddImplicitVersion));
             sb.AppendLine("{0}IncludeTypes: {1}".Fmt(defaultValue("IncludeTypes"), Config.IncludeTypes.Safe().ToArray().Join(",")));
             sb.AppendLine("{0}ExcludeTypes: {1}".Fmt(defaultValue("ExcludeTypes"), Config.ExcludeTypes.Safe().ToArray().Join(",")));
-            sb.AppendLine("{0}DefaultNamespaces: {1}".Fmt(defaultValue("DefaultNamespaces"), defaultNamespaces.ToArray().Join(",")));
+            sb.AppendLine("{0}DefaultImports: {1}".Fmt(defaultValue("DefaultImports"), defaultImports.Join(",")));
 
             sb.AppendLine("*/");
             sb.AppendLine();
@@ -110,7 +106,8 @@ namespace ServiceStack.NativeTypes.TypeScript
                 .Where(x => conflictPartialNames.Any(name => x.Name.StartsWith(name)))
                 .Map(x => x.Name);
 
-            defaultNamespaces.Each(x => sb.AppendLine("import {0};".Fmt(x)));
+            defaultImports.Each(x => sb.AppendLine("import {0};".Fmt(x)));
+            sb.AppendLine();
 
             sb.AppendLine("declare module {0}".Fmt(globalNamespace.SafeToken()));
             sb.AppendLine("{");
@@ -242,13 +239,15 @@ namespace ServiceStack.NativeTypes.TypeScript
 
                 sb = sb.Indent();
 
-                var addVersionInfo = Config.AddImplicitVersion != null && options.IsOperation;
+                var addVersionInfo = Config.AddImplicitVersion != null && options.IsRequest;
                 if (addVersionInfo)
                 {
-                    sb.AppendLine("{0}: number; //{1}".Fmt("Version".PropertyStyle(), Config.AddImplicitVersion));
+                    sb.AppendLine("{0}?: number; //{1}".Fmt("Version".PropertyStyle(), Config.AddImplicitVersion));
                 }
 
-                AddProperties(sb, type);
+                AddProperties(sb, type,
+                    includeResponseStatus: Config.AddResponseStatus && options.IsResponse
+                        && type.Properties.Safe().All(x => x.Name != typeof(ResponseStatus).Name));
 
                 sb = sb.UnIndent();
                 sb.AppendLine("}");
@@ -259,7 +258,7 @@ namespace ServiceStack.NativeTypes.TypeScript
             return lastNS;
         }
 
-        public void AddProperties(StringBuilderWrapper sb, MetadataType type)
+        public void AddProperties(StringBuilderWrapper sb, MetadataType type, bool includeResponseStatus)
         {
             var wasAdded = false;
 
@@ -293,14 +292,12 @@ namespace ServiceStack.NativeTypes.TypeScript
                 }
             }
 
-            if (Config.AddResponseStatus
-                && (type.Properties == null
-                    || type.Properties.All(x => x.Name != "ResponseStatus")))
+            if (includeResponseStatus)
             {
                 if (wasAdded) sb.AppendLine();
 
                 AppendDataMember(sb, null, dataMemberIndex++);
-                sb.AppendLine("{0}: ResponseStatus;".Fmt("ResponseStatus".PropertyStyle()));
+                sb.AppendLine("{0}?: ResponseStatus;".Fmt(typeof(ResponseStatus).Name.PropertyStyle()));
             }
         }
 
@@ -390,7 +387,6 @@ namespace ServiceStack.NativeTypes.TypeScript
 
         public string Type(string type, string[] genericArgs)
         {
-            IDictionary<string, string> d;
             if (genericArgs != null)
             {
                 if (type == "Nullable`1")

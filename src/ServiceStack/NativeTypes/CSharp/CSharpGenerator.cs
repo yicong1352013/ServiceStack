@@ -33,16 +33,6 @@ namespace ServiceStack.NativeTypes.CSharp
             { "Decimal", "decimal" },    
         };
 
-        class CreateTypeOptions
-        {
-            public Func<string> ImplementsFn { get; set; }
-            public bool IsRequest { get; set; }
-            public bool IsResponse { get; set; }
-            public bool IsOperation { get { return IsRequest || IsResponse; } }
-            public bool IsType { get; set; }
-            public bool IsNestedType { get; set; }
-        }
-
         public string GetCode(MetadataTypes metadata, IRequest request)
         {
             var namespaces = Config.GetDefaultNamespaces(metadata);
@@ -266,7 +256,9 @@ namespace ServiceStack.NativeTypes.CSharp
                 sb = sb.Indent();
 
                 AddConstuctor(sb, type, options);
-                AddProperties(sb, type);
+                AddProperties(sb, type,
+                    includeResponseStatus: Config.AddResponseStatus && options.IsResponse
+                        && type.Properties.Safe().All(x => x.Name != typeof(ResponseStatus).Name));
 
                 foreach (var innerTypeRef in type.InnerTypes.Safe())
                 {
@@ -299,7 +291,7 @@ namespace ServiceStack.NativeTypes.CSharp
             if (type.Properties != null && Config.InitializeCollections)
                 collectionProps = type.Properties.Where(x => x.IsCollection()).ToList();
 
-            var addVersionInfo = Config.AddImplicitVersion != null && options.IsOperation;
+            var addVersionInfo = Config.AddImplicitVersion != null && options.IsRequest;
             if (!addVersionInfo && collectionProps.Count <= 0) return;
 
             if (addVersionInfo)
@@ -328,7 +320,7 @@ namespace ServiceStack.NativeTypes.CSharp
             sb.AppendLine();
         }
 
-        public void AddProperties(StringBuilderWrapper sb, MetadataType type)
+        public void AddProperties(StringBuilderWrapper sb, MetadataType type, bool includeResponseStatus)
         {
             var makeExtensible = Config.MakeDataContractsExtensible && type.Inherits == null;
 
@@ -354,9 +346,7 @@ namespace ServiceStack.NativeTypes.CSharp
             if (type.IsInterface())
                 return;
 
-            if (Config.AddResponseStatus
-                && (type.Properties == null
-                    || type.Properties.All(x => x.Name != "ResponseStatus")))
+            if (includeResponseStatus)
             {
                 if (wasAdded) sb.AppendLine();
                 wasAdded = true;
@@ -582,50 +572,6 @@ namespace ServiceStack.NativeTypes.CSharp
 
     public static class CSharpGeneratorExtensions
     {
-        public static string SafeComment(this string comment)
-        {
-            return comment.Replace("\r", "").Replace("\n", "");
-        }
 
-        public static string SafeToken(this string token)
-        {
-            if (token.ContainsAny("\"", " ", "-", "+", "\\", "*", "=", "!"))
-                throw new InvalidDataException("MetaData is potentially malicious. Expected token, Received: {0}".Fmt(token));
-
-            return token;
-        }
-
-        public static string SafeValue(this string value)
-        {
-            if (value.Contains('"'))
-                throw new InvalidDataException("MetaData is potentially malicious. Expected scalar value, Received: {0}".Fmt(value));
-
-            return value;
-        }
-
-        public static string QuotedSafeValue(this string value)
-        {
-            return "\"{0}\"".Fmt(value.SafeValue());
-        }
-
-        public static MetadataAttribute ToMetadataAttribute(this MetadataRoute route)
-        {
-            var attr = new MetadataAttribute
-            {
-                Name = "Route",
-                ConstructorArgs = new List<MetadataPropertyType>
-                {
-                    new MetadataPropertyType { Type = "string", Value = route.Path },
-                },
-            };
-
-            if (route.Verbs != null)
-            {
-                attr.ConstructorArgs.Add(
-                    new MetadataPropertyType { Type = "string", Value = route.Verbs });
-            }
-
-            return attr;
-        }
     }
 }

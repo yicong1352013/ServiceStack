@@ -29,6 +29,8 @@ namespace ServiceStack
                     typeof(RequiredAttribute),
                     typeof(ReferencesAttribute),
                     typeof(StringLengthAttribute),
+                    typeof(AutoQueryViewerAttribute),
+                    typeof(AutoQueryViewerFieldAttribute),
                 },
                 IgnoreTypes = new HashSet<Type>
                 {
@@ -58,13 +60,6 @@ namespace ServiceStack
                     "System.Runtime.Serialization",
                     "ServiceStack",
                     "ServiceStack.DataAnnotations",
-                },
-                DefaultTypeScriptNamespaces = new List<string>
-                {
-                },
-                DefaultSwiftNamespaces = new List<string>
-                {
-                    "Foundation",    
                 },
             };
         }
