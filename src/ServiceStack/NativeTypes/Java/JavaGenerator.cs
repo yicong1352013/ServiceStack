@@ -36,6 +36,7 @@ namespace ServiceStack.NativeTypes.Java
         };
 
         public static string GSonAnnotationsNamespace = "com.google.gson.annotations.*";
+        public static string GSonReflectNamespace = "com.google.gson.reflect.*";
 
         public static bool AddGsonImport
         {
@@ -43,6 +44,8 @@ namespace ServiceStack.NativeTypes.Java
             {
                 //Used by @SerializedName() annotation, but requires Android dep
                 DefaultImports.Add(GSonAnnotationsNamespace);
+                //Used by TypeToken<T>
+                DefaultImports.Add(GSonReflectNamespace);
             }
         }
 
@@ -84,9 +87,12 @@ namespace ServiceStack.NativeTypes.Java
             {
                 defaultImports = Config.DefaultImports;
             }
-            else if (ReferencesGson(metadata) && !defaultImports.Contains(GSonAnnotationsNamespace))
+            else if (ReferencesGson(metadata))
             {
-                defaultImports.Add(GSonAnnotationsNamespace);
+                if (!defaultImports.Contains(GSonAnnotationsNamespace))
+                    defaultImports.Add(GSonAnnotationsNamespace);
+                if (!defaultImports.Contains(GSonReflectNamespace))
+                    defaultImports.Add(GSonReflectNamespace);
             }
 
             var defaultNamespace = Config.GlobalNamespace ?? DefaultGlobalNamespace;
@@ -226,7 +232,8 @@ namespace ServiceStack.NativeTypes.Java
         {
             var allTypes = GetAllMetadataTypes(metadata);
             return allTypes.Any(x => JavaGeneratorExtensions.JavaKeyWords.Contains(x.Name)
-                || x.Properties.Safe().Any(p => p.DataMember != null && p.DataMember.Name != null));
+                || x.Properties.Safe().Any(p => p.DataMember != null && p.DataMember.Name != null)
+                || (x.ReturnMarkerTypeName != null && x.ReturnMarkerTypeName.Name.IndexOf('`') >= 0)); //uses TypeToken<T>
         }
 
         private static List<MetadataType> GetAllMetadataTypes(MetadataTypes metadata)
@@ -286,7 +293,7 @@ namespace ServiceStack.NativeTypes.Java
 
                         sb.AppendLine(value == null
                             ? "{0}{1}".Fmt(name.ToPascalCase(), delim)
-                            : "{0}({1}){2}".Fmt(name.ToPascalCase(), value, delim));
+                            : "@SerializedName(\"{1}\") {0}({1}){2}".Fmt(name.ToPascalCase(), value, delim));
 
                         hasIntValue = hasIntValue || value != null;
                     }
@@ -333,7 +340,7 @@ namespace ServiceStack.NativeTypes.Java
 
                             //Can't get .class from Generic Type definition
                             responseTypeExpression = returnType.Contains("<")
-                                ? "new {0}().getClass()".Fmt(returnType)
+                                ? "new TypeToken<{0}>(){{}}.getType()".Fmt(returnType)
                                 : "{0}.class".Fmt(returnType);
                         }
                     }
@@ -370,8 +377,8 @@ namespace ServiceStack.NativeTypes.Java
 
                 if (responseTypeExpression != null)
                 {
-                    sb.AppendLine("private static Class responseType = {0};".Fmt(responseTypeExpression));
-                    sb.AppendLine("public Class getResponseType() { return responseType; }");
+                    sb.AppendLine("private static Object responseType = {0};".Fmt(responseTypeExpression));
+                    sb.AppendLine("public Object getResponseType() { return responseType; }");
                 }
 
                 sb = sb.UnIndent();

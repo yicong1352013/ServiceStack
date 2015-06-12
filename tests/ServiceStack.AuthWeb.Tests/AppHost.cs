@@ -18,6 +18,7 @@ using ServiceStack.Configuration;
 using ServiceStack.Data;
 using ServiceStack.DataAnnotations;
 using ServiceStack.FluentValidation;
+using ServiceStack.Html.AntiXsrf;
 using ServiceStack.Logging;
 using ServiceStack.MiniProfiler;
 using ServiceStack.MiniProfiler.Data;
@@ -107,7 +108,9 @@ namespace ServiceStack.AuthWeb.Tests
                     //    LoadUserAuthFilter = LoadUserAuthInfo,
                     //    AllowAllWindowsAuthUsers = true
                     //}, 
-                    new CredentialsAuthProvider(),        //HTML Form post of UserName/Password credentials
+                    new CredentialsAuthProvider {  //HTML Form post of UserName/Password credentials
+                        SkipPasswordVerificationForPrivateRequests = true,
+                    },        
                     new TwitterAuthProvider(appSettings),       //Sign-in with Twitter
                     new FacebookAuthProvider(appSettings),      //Sign-in with Facebook
                     new DigestAuthProvider(appSettings),        //Sign-in with Digest Auth
@@ -245,6 +248,12 @@ namespace ServiceStack.AuthWeb.Tests
                 Log.Error("Could not retrieve windows user info for '{0}'".Fmt(tokens.DisplayName), ex);
             }
         }
+
+        public override List<Type> ExportSoapOperationTypes(List<Type> operationTypes)
+        {
+            //return base.ExportSoapOperationTypes(operationTypes);
+            return new List<Type> { typeof(Authenticate) };
+        }
     }
 
     public class CustomUserAuth : UserAuth
@@ -276,6 +285,26 @@ namespace ServiceStack.AuthWeb.Tests
             catch (Exception ex)
             {
                 return ex;
+            }
+        }
+    }
+
+    [Route("/privateauth")]
+    public class PrivateAuth
+    {
+        public string UserName { get; set; }
+    }
+
+    public class PrivateAuthService : Service
+    {
+        public object Any(PrivateAuth request)
+        {
+            using (var service = base.ResolveService<AuthenticateService>())
+            {
+                return service.Post(new Authenticate {
+                    provider = AuthenticateService.CredentialsProvider,
+                    UserName = request.UserName,
+                });
             }
         }
     }
@@ -416,6 +445,22 @@ namespace ServiceStack.AuthWeb.Tests
             {
                 ServerEvents.NotifyChannel(request.Channel, request.Selector, request.Message);
             }
+        }
+    }
+
+    [Route("/antiforgery/test")]
+    public class AntiForgeryTest
+    {
+        public string Field { get; set; }
+    }
+
+    public class AntiForgeryService : Service
+    {
+        public object Any(AntiForgeryTest request)
+        {
+            AntiForgery.Validate();
+
+            return request;
         }
     }
 

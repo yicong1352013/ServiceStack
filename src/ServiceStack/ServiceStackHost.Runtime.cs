@@ -5,10 +5,13 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Web;
+using System.Xml;
 using ServiceStack.Auth;
+using ServiceStack.DataAnnotations;
 using ServiceStack.FluentValidation;
 using ServiceStack.Host;
 using ServiceStack.Host.Handlers;
@@ -36,13 +39,19 @@ namespace ServiceStack
         /// <returns></returns>
         public virtual bool ApplyPreRequestFilters(IRequest httpReq, IResponse httpRes)
         {
-            foreach (var requestFilter in PreRequestFilters)
-            {
-                requestFilter(httpReq, httpRes);
-                if (httpRes.IsClosed) break;
-            }
+            if (PreRequestFilters.Count == 0)
+                return false;
 
-            return httpRes.IsClosed;
+            using (Profiler.Current.Step("Executing Pre RequestFilters"))
+            {
+                foreach (var requestFilter in PreRequestFilters)
+                {
+                    requestFilter(httpReq, httpRes);
+                    if (httpRes.IsClosed) break;
+                }
+
+                return httpRes.IsClosed;
+            }
         }
 
         /// <summary>
@@ -411,6 +420,40 @@ namespace ServiceStack
         public virtual object OnAfterExecute(IRequest req, object requestDto, object response)
         {
             return response;
+        }
+
+        public virtual MetadataTypesConfig GetTypesConfigForMetadata(IRequest req)
+        {
+            var typesConfig = new NativeTypesFeature().MetadataTypesConfig;
+            typesConfig.IgnoreTypesInNamespaces.Clear();
+            typesConfig.IgnoreTypes.Add(typeof(ResponseStatus));
+            typesConfig.IgnoreTypes.Add(typeof(ResponseError));
+            return typesConfig;
+        }
+
+        public virtual List<Type> ExportSoapOperationTypes(List<Type> operationTypes)
+        {
+            var types = operationTypes
+                .Where(x => !x.AllAttributes<ExcludeAttribute>()
+                            .Any(attr => attr.Feature.HasFlag(Feature.Soap)))
+                .Where(x => !x.IsGenericTypeDefinition())
+                .ToList();
+            return types;
+        }
+
+        public virtual bool ExportSoapType(Type type)
+        {
+            return !type.IsGenericTypeDefinition() && 
+                   !type.AllAttributes<ExcludeAttribute>()
+                        .Any(attr => attr.Feature.HasFlag(Feature.Soap));
+        }
+
+        public virtual void WriteSoapMessage(System.ServiceModel.Channels.Message message, Stream outputStream)
+        {
+            using (var writer = XmlWriter.Create(outputStream, Config.XmlWriterSettings))
+            {
+                message.WriteMessage(writer);
+            }
         }
     }
 

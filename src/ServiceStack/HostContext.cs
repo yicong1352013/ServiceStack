@@ -330,15 +330,23 @@ namespace ServiceStack
             AssertAppHost().OnUncaughtException(httpReq, httpRes, operationName, ex);
         }
 
+        public static void RaiseAndHandleUncaughtException(IRequest httpReq, IResponse httpRes, string operationName, Exception ex)
+        {
+            AssertAppHost().OnUncaughtException(httpReq, httpRes, operationName, ex);
+
+            if (httpRes.IsClosed)
+                return;
+
+            AssertAppHost().HandleUncaughtException(httpReq, httpRes, operationName, ex);
+        }
+
         /// <summary>
         /// Resolves and auto-wires a ServiceStack Service from a ASP.NET HttpContext.
         /// </summary>
         public static T ResolveService<T>(HttpContextBase httpCtx=null) where T : class, IRequiresRequest
         {
-            var service = AssertAppHost().Container.Resolve<T>();
-            if (service == null) return null;
-            service.Request = httpCtx != null ? httpCtx.ToRequest() : GetCurrentRequest();
-            return service;
+            var httpReq = httpCtx != null ? httpCtx.ToRequest() : GetCurrentRequest();
+            return ResolveService(httpReq, AssertAppHost().Container.Resolve<T>());
         }
 
         /// <summary>
@@ -346,10 +354,7 @@ namespace ServiceStack
         /// </summary>
         public static T ResolveService<T>(HttpListenerContext httpCtx) where T : class, IRequiresRequest
         {
-            var service = AssertAppHost().Container.Resolve<T>();
-            if (service == null) return null;
-            service.Request = httpCtx.ToRequest();
-            return service;
+            return ResolveService(httpCtx.ToRequest(), AssertAppHost().Container.Resolve<T>());
         }
 
         /// <summary>
@@ -357,9 +362,17 @@ namespace ServiceStack
         /// </summary>
         public static T ResolveService<T>(IHttpRequest httpReq) where T : class, IRequiresRequest
         {
-            var service = AssertAppHost().Container.Resolve<T>();
-            if (service == null) return null;
-            service.Request = httpReq;
+            return ResolveService(httpReq, AssertAppHost().Container.Resolve<T>());
+        }
+
+        public static T ResolveService<T>(IRequest httpReq, T service)
+        {
+            var hasRequest = service as IRequiresRequest;
+            if (hasRequest != null)
+            {
+                httpReq.SetPrivateRequest();
+                hasRequest.Request = httpReq;
+            }
             return service;
         }
 

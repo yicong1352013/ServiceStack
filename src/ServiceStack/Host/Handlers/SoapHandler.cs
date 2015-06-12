@@ -104,7 +104,8 @@ namespace ServiceStack.Host.Handlers
 
                 var request = useXmlSerializerRequest
                     ? XmlSerializableSerializer.Instance.DeserializeFromString(requestXml, requestType)
-                    : Serialization.DataContractSerializer.Instance.DeserializeFromString(requestXml, requestType);
+                    : Serialization.DataContractSerializer.Instance.DeserializeFromString(requestXml,
+                                                                                                        requestType);
 
                 httpReq.Dto = request;
 
@@ -114,7 +115,7 @@ namespace ServiceStack.Host.Handlers
                     requiresSoapMessage.Message = requestMsg;
                 }
 
-                httpReq.SetItem("SoapMessage", requestMsg);
+                httpReq.SetItem(Keywords.SoapMessage, requestMsg);
 
                 httpRes.ContentType = GetSoapContentType(httpReq.ContentType);
 
@@ -135,7 +136,7 @@ namespace ServiceStack.Host.Handlers
                 }
 
                 var hasResponseFilters = HostContext.GlobalResponseFilters.Count > 0
-                   || FilterAttributeCache.GetResponseFilterAttributes(response.GetType()).Any();
+                    || FilterAttributeCache.GetResponseFilterAttributes(response.GetType()).Any();
 
                 if (hasResponseFilters && HostContext.ApplyResponseFilters(httpReq, httpRes, response))
                     return EmptyResponse(requestMsg, requestType);
@@ -156,9 +157,18 @@ namespace ServiceStack.Host.Handlers
             }
             catch (Exception ex)
             {
+                if (httpReq.Dto != null)
+                    HostContext.RaiseServiceException(httpReq, httpReq.Dto, ex);
+                else
+                    HostContext.RaiseUncaughtException(httpReq, httpRes, httpReq.OperationName, ex);
+
                 throw new SerializationException("3) Error trying to deserialize requestType: "
                     + requestType
                     + ", xml body: " + requestXml, ex);
+            }
+            finally
+            {
+                HostContext.CompleteRequest(httpReq);
             }
         }
 
@@ -246,7 +256,7 @@ namespace ServiceStack.Host.Handlers
 
         private static void SerializeSoapToStream(IRequest req, object response, MessageVersion defaultMsgVersion, Stream stream)
         {
-            var requestMsg = req.GetItem("SoapMessage") as Message;
+            var requestMsg = req.GetItem(Keywords.SoapMessage) as Message;
             var msgVersion = requestMsg != null
                 ? requestMsg.Version
                 : defaultMsgVersion;
@@ -256,10 +266,7 @@ namespace ServiceStack.Host.Handlers
             var responseMsg = CreateResponseMessage(response, msgVersion, req.Dto.GetType(), noMsgVersion);
             SetErrorStatusIfAny(req.Response, responseMsg, req.Response.StatusCode);
 
-            using (var writer = CreateXmlWriter(stream))
-            {
-                responseMsg.WriteMessage(writer);
-            }
+            HostContext.AppHost.WriteSoapMessage(responseMsg, stream);
         }
 
         private static void SetErrorStatusIfAny(IResponse res, Message responseMsg, int statusCode)
@@ -378,11 +385,6 @@ namespace ServiceStack.Host.Handlers
         public override object GetResponse(IRequest httpReq, object request)
         {
             throw new NotImplementedException();
-        }
-
-        public static XmlWriter CreateXmlWriter(Stream stream)
-        {
-            return XmlWriter.Create(stream, HostContext.Config.XmlWriterSettings);
         }
     }
 }

@@ -75,6 +75,7 @@ namespace ServiceStack
             UncaughtExceptionHandlers = new List<HandleUncaughtExceptionDelegate>();
             AfterInitCallbacks = new List<Action<IAppHost>>();
             OnDisposeCallbacks = new List<Action<IAppHost>>();
+            OnEndRequestCallbacks = new List<Action<IRequest>>();
             RawHttpHandlers = new List<Func<IHttpRequest, IHttpHandler>> {
                  HttpHandlerFactory.ReturnRequestInfo,
                  MiniProfilerHandler.MatchesRequest,
@@ -261,6 +262,8 @@ namespace ServiceStack
 
         public List<Action<IAppHost>> OnDisposeCallbacks { get; set; }
 
+        public List<Action<IRequest>> OnEndRequestCallbacks { get; set; }
+
         public List<Func<IHttpRequest, IHttpHandler>> RawHttpHandlers { get; set; }
 
         public List<HttpHandlerResolverDelegate> CatchAllHandlers { get; set; }
@@ -318,20 +321,18 @@ namespace ServiceStack
                     errorHandler(httpReq, httpRes, operationName, ex);
                 }
             }
-            else
-            {
-                //Only add custom error messages to StatusDescription
-                var httpError = ex as IHttpError;
-                var errorMessage = httpError != null ? httpError.Message : null;
-                var statusCode = ex.ToStatusCode();
+        }
 
-                //httpRes.WriteToResponse always calls .Close in it's finally statement so 
-                //if there is a problem writing to response, by now it will be closed
-                if (!httpRes.IsClosed)
-                {
-                    httpRes.WriteErrorToResponse(httpReq, httpReq.ResponseContentType, operationName, errorMessage, ex, statusCode);
-                }
-            }
+        public virtual void HandleUncaughtException(IRequest httpReq, IResponse httpRes, string operationName, Exception ex)
+        {
+            //Only add custom error messages to StatusDescription
+            var httpError = ex as IHttpError;
+            var errorMessage = httpError != null ? httpError.Message : null;
+            var statusCode = ex.ToStatusCode();
+
+            //httpRes.WriteToResponse always calls .Close in it's finally statement so 
+            //if there is a problem writing to response, by now it will be closed
+            httpRes.WriteErrorToResponse(httpReq, httpReq.ResponseContentType, operationName, errorMessage, ex, statusCode);
         }
 
         public virtual void OnStartupException(Exception ex)
@@ -368,6 +369,7 @@ namespace ServiceStack
 
         public virtual void OnBeforeInit()
         {
+            Container.Register<IHashProvider>(c => new SaltedHash());
         }
 
         //After configure called
@@ -572,6 +574,11 @@ namespace ServiceStack
             }
 
             RequestContext.Instance.EndRequest();
+
+            foreach (var fn in OnEndRequestCallbacks)
+            {
+                fn(request);
+            }
         }
 
         public virtual void Register<T>(T instance)

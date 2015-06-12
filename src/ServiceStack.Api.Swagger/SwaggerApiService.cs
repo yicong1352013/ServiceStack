@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.Serialization;
 using System.Text.RegularExpressions;
+using ServiceStack.DataAnnotations;
 using ServiceStack.Host;
 using ServiceStack.Web;
 
@@ -12,6 +13,7 @@ namespace ServiceStack.Api.Swagger
     using ServiceStack.Api.Swagger.Support;
 
     [DataContract]
+    [Exclude(Feature.Soap)]
     public class ResourceRequest
     {
         [DataMember(Name = "apiKey")]
@@ -113,8 +115,8 @@ namespace ServiceStack.Api.Swagger
         public bool AllowMultiple { get; set; }
         [DataMember(Name = "required")]
         public bool Required { get; set; }
-        [DataMember(Name = "dataType")]
-        public string DataType { get; set; }
+        [DataMember(Name = "type")]
+        public string Type { get; set; }
         [DataMember(Name = "allowableValues")]
         public ParameterAllowableValues AllowableValues { get; set; }
     }
@@ -175,7 +177,7 @@ namespace ServiceStack.Api.Swagger
                 ParseModel(models, restPath.Value.RequestType, restPath.Value.Path, restPath.Verb);
             }
 
-            var apis = paths.Select(p => FormateMethodDescription(p, models))
+            var apis = paths.Select(p => FormatMethodDescription(p, models))
                 .ToArray().OrderBy(md => md.Path).ToList();
 
             return new ResourceResponse
@@ -207,7 +209,10 @@ namespace ServiceStack.Api.Swagger
 
         private static bool IsSwaggerScalarType(Type type)
         {
-            return ClrTypesToSwaggerScalarTypes.ContainsKey(type) || (Nullable.GetUnderlyingType(type) ?? type).IsEnum;
+            return ClrTypesToSwaggerScalarTypes.ContainsKey(type) 
+                || (Nullable.GetUnderlyingType(type) ?? type).IsEnum
+                || type.IsValueType
+                || type.IsNullableType();
         }
 
         private static string GetSwaggerTypeName(Type type, string route = null, string verb = null)
@@ -242,6 +247,9 @@ namespace ServiceStack.Api.Swagger
 
 		private static string GetModelTypeName(Type modelType, string path = null, string verb = null)
 		{
+		    if (modelType.IsValueType || modelType.IsNullableType())
+		        return SwaggerType.String;
+
 		    verb = string.IsNullOrEmpty(verb) ? "" : verb + "_";
 		    if (!modelType.IsGenericType)
 		        return verb + modelType.Name + (path ?? "");
@@ -310,19 +318,25 @@ namespace ServiceStack.Api.Swagger
 
             foreach (var prop in properties)
             {
-                var allApiDocAttributes = prop
+                if (prop.HasAttribute<IgnoreDataMemberAttribute>())
+                    continue;
+
+                var apiMembers = prop
                     .AllAttributes<ApiMemberAttribute>()
-                    .Where(attr => prop.Name.Equals(attr.Name, StringComparison.InvariantCultureIgnoreCase))
+                    //.Where(attr => prop.Name.Equals(attr.Name, StringComparison.InvariantCultureIgnoreCase))
                     .OrderByDescending(attr => attr.Route)
                     .ToList();
-                var apiDoc = allApiDocAttributes
+                var apiDoc = apiMembers
                     .Where(attr => string.IsNullOrEmpty(verb) || string.IsNullOrEmpty(attr.Verb) || (verb ?? "").Equals(attr.Verb))
                     .Where(attr => string.IsNullOrEmpty(route) || string.IsNullOrEmpty(attr.Route) || (route ?? "").StartsWith(attr.Route))
                     .FirstOrDefault(attr => attr.ParameterType == "body" || attr.ParameterType == "model");
 
-                if (allApiDocAttributes.Any(x => !string.IsNullOrEmpty(x.Verb) 
+                if (apiMembers.Any(x => !string.IsNullOrEmpty(x.Verb) 
                     || !string.IsNullOrEmpty(x.Route)) 
                     && apiDoc == null) 
+                    continue;
+
+                if (apiMembers.Any(x => x.ExcludeInSchema))
                     continue;
 
                 var propertyType = prop.PropertyType;
@@ -442,7 +456,7 @@ namespace ServiceStack.Api.Swagger
                 .ToList();
         }
 
-        private MethodDescription FormateMethodDescription(RestPath restPath, Dictionary<string, SwaggerModel> models)
+        private MethodDescription FormatMethodDescription(RestPath restPath, Dictionary<string, SwaggerModel> models)
         {
             var verbs = new List<string>();
             var summary = restPath.Summary;
@@ -455,11 +469,11 @@ namespace ServiceStack.Api.Swagger
             else
                 verbs.AddRange(restPath.AllowedVerbs.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries));
 
-            var nickName = nicknameCleanerRegex.Replace(restPath.Path, "");
-
+            var routePath = restPath.Path.Replace("*","");
+            var nickName = nicknameCleanerRegex.Replace(routePath, "");
             var md = new MethodDescription
             {
-                Path = restPath.Path,
+                Path = routePath,
                 Description = summary,
                 Operations = verbs.Select(verb =>
                     new MethodOperation
@@ -468,7 +482,7 @@ namespace ServiceStack.Api.Swagger
                         Nickname = verb.ToLowerInvariant() + nickName,
                         Summary = summary,
                         Notes = notes,
-                        Parameters = ParseParameters(verb, restPath.RequestType, models, restPath.Path),
+                        Parameters = ParseParameters(verb, restPath.RequestType, models, routePath),
                         ResponseClass = GetResponseClass(restPath, models),
                         ErrorResponses = GetMethodResponseCodes(restPath.RequestType)
                     }).ToList()
@@ -498,54 +512,91 @@ namespace ServiceStack.Api.Swagger
             var properties = operationType.GetProperties();
             var paramAttrs = new Dictionary<string, ApiMemberAttribute[]>();
             var allowableParams = new List<ApiAllowableValuesAttribute>();
+            var defaultOperationParameters = new List<MethodOperationParameter>();
+
+            var hasApiMembers = false;
 
             foreach (var property in properties)
             {
-                var propertyName = property.Name;
-                if (hasDataContract)
-                {
-                    var dataMemberAttr = property.FirstAttribute<DataMemberAttribute>();
-                    if (dataMemberAttr != null && dataMemberAttr.Name != null)
-                    {
-                        propertyName = dataMemberAttr.Name;
-                    }
-                }
-                paramAttrs[propertyName] = property.AllAttributes<ApiMemberAttribute>();
-                allowableParams.AddRange(property.AllAttributes<ApiAllowableValuesAttribute>());
+                if (property.HasAttribute<IgnoreDataMemberAttribute>())
+                    continue;
+
+                var attr = hasDataContract
+                    ? property.FirstAttribute<DataMemberAttribute>()
+                    : null;
+                
+                var propertyName = attr != null && attr.Name != null
+                    ? attr.Name
+                    : property.Name;
+
+                var apiMembers = property.AllAttributes<ApiMemberAttribute>();
+                if (apiMembers.Length > 0)
+                    hasApiMembers = true;
+
+                paramAttrs[propertyName] = apiMembers;
+                var allowableValuesAttrs = property.AllAttributes<ApiAllowableValuesAttribute>();
+                allowableParams.AddRange(allowableValuesAttrs);
+
+                if (hasDataContract && attr == null)
+                    continue;
+
+                var inPath = (route ?? "").ToLower().Contains("{" + propertyName.ToLower() + "}");
+                var paramType = inPath
+                    ? "path" 
+                    : verb == HttpMethods.Post || verb == HttpMethods.Put 
+                        ? "form" 
+                        : "query";
+
+                defaultOperationParameters.Add(new MethodOperationParameter {
+                    Type = GetSwaggerTypeName(property.PropertyType),
+                    AllowMultiple = false,
+                    Description = property.PropertyType.GetDescription(),
+                    Name = propertyName,
+                    ParamType = paramType,
+                    Required = paramType == "path",
+                    AllowableValues = GetAllowableValue(allowableValuesAttrs.FirstOrDefault()),
+                });
             }
 
-            var methodOperationParameters = new List<MethodOperationParameter>();
-            foreach (var key in paramAttrs.Keys)
+            var methodOperationParameters = defaultOperationParameters;
+            if (hasApiMembers)
             {
-                var value = paramAttrs[key];
-                methodOperationParameters.AddRange(
-                    from ApiMemberAttribute member in value
-                    where member.Verb == null || string.Compare(member.Verb, verb, StringComparison.InvariantCultureIgnoreCase) == 0
-                    where member.Route == null || (route ?? "").StartsWith(member.Route)
-                    where !string.Equals(member.ParameterType, "model") 
-                    select new MethodOperationParameter
+                methodOperationParameters = new List<MethodOperationParameter>();
+                foreach (var key in paramAttrs.Keys)
+                {
+                    var apiMembers = paramAttrs[key];
+                    foreach (var member in apiMembers)
                     {
-                        DataType = member.DataType ?? SwaggerType.String,
-                        AllowMultiple = member.AllowMultiple,
-                        Description = member.Description,
-                        Name = member.Name ?? key,
-                        ParamType = member.GetParamType(operationType, member.Verb ?? verb),
-                        Required = member.IsRequired,
-                        AllowableValues = GetAllowableValue(allowableParams.FirstOrDefault(attr => attr.Name == member.Name))
-                    });
+                        if ((member.Verb == null || string.Compare(member.Verb, verb, StringComparison.InvariantCultureIgnoreCase) == 0)
+                            && (member.Route == null || (route ?? "").StartsWith(member.Route))
+                            && !string.Equals(member.ParameterType, "model"))
+                        {
+                            methodOperationParameters.Add(new MethodOperationParameter
+                            {
+                                Type = member.DataType ?? SwaggerType.String,
+                                AllowMultiple = member.AllowMultiple,
+                                Description = member.Description,
+                                Name = member.Name ?? key,
+                                ParamType = member.GetParamType(operationType, member.Verb ?? verb),
+                                Required = member.IsRequired,
+                                AllowableValues = GetAllowableValue(allowableParams.FirstOrDefault(attr => attr.Name == (member.Name ?? key)))
+                            });
+                        }
+                    }
+                }
             }
 
             if (!DisableAutoDtoInBodyParam)
             {
-                if (!HttpMethods.Get.Equals(verb, StringComparison.OrdinalIgnoreCase) 
+                if (!HttpMethods.Get.EqualsIgnoreCase(verb) && !HttpMethods.Delete.EqualsIgnoreCase(verb) 
                     && !methodOperationParameters.Any(p => "body".EqualsIgnoreCase(p.ParamType)))
                 {
                     ParseModel(models, operationType, route, verb);
                     methodOperationParameters.Add(new MethodOperationParameter
                     {
-                        DataType = GetSwaggerTypeName(operationType, route, verb),
                         ParamType = "body",
-                        Name = GetSwaggerTypeName(operationType)
+                        Name = "body",
+                        Type = GetSwaggerTypeName(operationType, route, verb),
                     });
                 }
             }

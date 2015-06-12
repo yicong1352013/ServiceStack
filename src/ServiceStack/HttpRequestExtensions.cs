@@ -616,7 +616,7 @@ namespace ServiceStack
                 var hasPreferredContentTypes = new bool[preferredContentTypes.Length];
                 foreach (var acceptsType in acceptContentTypes)
                 {
-                    var contentType = acceptsType.SplitOnFirst(";")[0];
+                    var contentType = ContentFormat.GetRealContentType(acceptsType);
                     acceptsAnything = acceptsAnything || contentType == "*/*";
 
                     for (var i = 0; i < preferredContentTypes.Length; i++)
@@ -648,7 +648,8 @@ namespace ServiceStack
                 {
                     foreach (var customContentType in customContentTypes)
                     {
-                        if (contentType.StartsWith(customContentType)) return customContentType;
+                        if (contentType.StartsWith(customContentType, StringComparison.OrdinalIgnoreCase)) 
+                            return customContentType;
                     }
                 }
             }
@@ -710,6 +711,8 @@ namespace ServiceStack
         {
             if (string.IsNullOrEmpty(fromPathInfo))
                 fromPathInfo = "/" + (HostContext.Config.HandlerFactoryPath ?? "");
+            else
+                fromPathInfo = fromPathInfo.TrimEnd('/');
 
             if (string.IsNullOrEmpty(absoluteUri))
                 return null;
@@ -951,18 +954,18 @@ namespace ServiceStack
 
         public static System.ServiceModel.Channels.Message GetSoapMessage(this IRequest httpReq)
         {
-            return httpReq.Items["SoapMessage"] as System.ServiceModel.Channels.Message;
+            return httpReq.Items[Keywords.SoapMessage] as System.ServiceModel.Channels.Message;
         }
 
         public static void SetRoute(this IRequest req, RestPath route)
         {
-            req.Items["__route"] = route;
+            req.Items[Keywords.Route] = route;
         }
 
         public static RestPath GetRoute(this IRequest req)
         {
             object route;
-            req.Items.TryGetValue("__route", out route);
+            req.Items.TryGetValue(Keywords.Route, out route);
             return route as RestPath;
         }
 

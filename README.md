@@ -5,7 +5,7 @@ follow [@ServiceStack](http://twitter.com/servicestack) for project updates.
 
 ### Simple, Fast, Versatile and full-featured Services Framework
 
-ServiceStack is a simple, fast, versatile and full-featured [Web](http://razor.servicestack.net) and 
+ServiceStack is a simple, fast, versatile and highly-productive full-featured [Web](http://razor.servicestack.net) and 
 [Web Services](https://github.com/ServiceStack/ServiceStack/wiki/Service-Stack-Web-Services) Framework that's 
 thoughtfully-architected to [reduce artificial complexity](https://github.com/ServiceStack/ServiceStack/wiki/Auto-Query#why-not-complexity) and promote 
 [remote services best-practices](https://github.com/ServiceStack/ServiceStack/wiki/Advantages-of-message-based-web-services) 
@@ -27,15 +27,51 @@ reducing the effort to serve both
 [Rich Desktop and Mobile Clients](https://github.com/ServiceStackApps/HelloMobile).
 
 ServiceStack Services also maximize productivity for consumers providing an 
-[instant end-to-end typed API without code-gen](https://github.com/ServiceStack/ServiceStack/wiki/C%23-client), 
-or when preferred, clients can 
-[Add a remote ServiceStack Reference](https://github.com/ServiceStack/ServiceStack/wiki/Add-ServiceStack-Reference) to generate typed DTO's for 
+[instant end-to-end typed API without code-gen](https://github.com/ServiceStack/ServiceStack/wiki/C%23-client) enabling
+the most productive development experience for developing .NET to .NET Web Services.
+
+### [Generate Instant Typed API's from a Remote Url!](https://github.com/ServiceStack/ServiceStack/wiki/Add-ServiceStack-Reference)
+
+ServiceStack now integrates with all Major IDE's used for creating the best native experiences on the most popular platforms 
+to enable a highly productive dev workflow for consuming Web Services, making ServiceStack the ideal back-end choice for powering 
+rich, native iPhone and iPad Apps on iOS with Swift, Mobile and Tablet Apps on the Android platform with Java, OSX Desktop Appications 
+as well as targetting the most popular .NET PCL platforms including Xamarin.iOS, Xamarin.Android, Windows Store, WPF, WinForms and Silverlight: 
+
+<img src="https://raw.githubusercontent.com/ServiceStack/Assets/master/img/release-notes/add-ss-reference-ides.png" align="right" />
+
+#### [VS.NET integration with ServiceStackVS](https://visualstudiogallery.msdn.microsoft.com/5bd40817-0986-444d-a77d-482e43a48da7)
+
+Providing instant Native Typed API's for 
 [C#](https://github.com/ServiceStack/ServiceStack/wiki/CSharp-Add-ServiceStack-Reference), 
 [F#](https://github.com/ServiceStack/ServiceStack/wiki/FSharp-Add-ServiceStack-Reference), 
-[VB.NET](https://github.com/ServiceStack/ServiceStack/wiki/VB.Net-Add-ServiceStack-Reference),
-[TypeScript](https://github.com/ServiceStack/ServiceStack/wiki/TypeScript-Add-ServiceStack-Reference) 
-and [Swift iOS and OSX Clients](https://github.com/ServiceStack/ServiceStack/wiki/Swift-Add-ServiceStack-Reference).
+[VB.NET](https://github.com/ServiceStack/ServiceStack/wiki/VB.Net-Add-ServiceStack-Reference) 
+and [TypeScript](https://github.com/ServiceStack/ServiceStack/wiki/TypeScript-Add-ServiceStack-Reference) 
+directly in Visual Studio for the 
+[most popular .NET platforms](https://github.com/ServiceStackApps/HelloMobile) including iOS and Android using 
+[Xamarin.iOS](https://github.com/ServiceStackApps/HelloMobile#xamarinios-client) and 
+[Xamarin.Android](https://github.com/ServiceStackApps/HelloMobile#xamarinandroid-client) on Windows.
 
+#### [Xamarin Studio integration with ServiceStackXS](https://github.com/ServiceStack/ServiceStack/wiki/CSharp-Add-ServiceStack-Reference#xamarin-studio)
+
+Providing [C# Native Types](https://github.com/ServiceStack/ServiceStack/wiki/CSharp-Add-ServiceStack-Reference) 
+support for developing iOS and Android mobile Apps using 
+[Xamarin.iOS](https://github.com/ServiceStackApps/HelloMobile#xamarinios-client) and 
+[Xamarin.Android](https://github.com/ServiceStackApps/HelloMobile#xamarinandroid-client) with 
+[Xamarin Studio](http://xamarin.com/studio) on OSX. The **ServiceStackXS** plugin also provides a rich web service 
+development experience developing Client applications with 
+[Mono Develop on Linux](https://github.com/ServiceStack/ServiceStack/wiki/CSharp-Add-ServiceStack-Reference#xamarin-studio-for-linux)
+
+#### [Xcode integration with ServiceStackXC Plugin](https://github.com/ServiceStack/ServiceStack/wiki/Swift-Add-ServiceStack-Reference)
+
+Providing [an instant Native Typed API in Swift](https://github.com/ServiceStack/ServiceStack/wiki/Swift-Add-ServiceStack-Reference) 
+including generic Service Clients enabling a highly-productive workflow and effortless consumption of Web Services from 
+native iOS and OSX Applications - directly from within Xcode!
+
+#### [Android Studio integration with ServiceStackIDEA](https://github.com/ServiceStack/ServiceStack/wiki/Java-Add-ServiceStack-Reference)
+
+Providing [an instant Native Typed API in Java](https://github.com/ServiceStack/ServiceStack/wiki/Java-Add-ServiceStack-Reference) 
+including idiomatic Java Generic Service Clients supporting Sync and Async Requests by levaraging Android's AsyncTasks to enable the
+creation of services-rich and responsive native Java Mobile Apps on the Android platform - directly from within Android Studio!
 
 ## Simple REST service example
 
@@ -220,6 +256,7 @@ Follow [@ServiceStack](http://twitter.com/ServiceStack) and
 ## Core Team
 
  - [mythz](https://github.com/mythz) (Demis Bellot)
+ - [layoric](https://github.com/layoric) (Darren Reid) / [@layoric](https://twitter.com/layoric)
  - [arxisos](https://github.com/arxisos) (Steffen Müller) / [@arxisos](https://twitter.com/arxisos)
  - [desunit](https://github.com/desunit) (Sergey Bogdanov) / [@desunit](https://twitter.com/desunit)
 

@@ -168,7 +168,7 @@ namespace ServiceStack.Host
             return operation != null ? operation.ResponseType : null;
         }
 
-        public List<Type> GetAllTypes()
+        public List<Type> GetAllOperationTypes()
         {
             var allTypes = new List<Type>(RequestTypes);
             foreach (var responseType in ResponseTypes)
@@ -176,6 +176,13 @@ namespace ServiceStack.Host
                 allTypes.AddIfNotExists(responseType);
             }
             return allTypes;
+        }
+
+        public List<Type> GetAllSoapOperationTypes()
+        {
+            var operationTypes = GetAllOperationTypes();
+            var soapTypes = HostContext.AppHost.ExportSoapOperationTypes(operationTypes);
+            return soapTypes;
         }
 
         public List<string> GetAllOperationNames()
@@ -308,9 +315,11 @@ namespace ServiceStack.Host
         {
             var typeMetadata = HostContext.TryResolve<INativeTypesMetadata>();
 
+            var typesConfig = HostContext.AppHost.GetTypesConfigForMetadata(httpReq);
+
             var metadataTypes = typeMetadata != null
-                ? typeMetadata.GetMetadataTypes(httpReq)
-                : new MetadataTypesGenerator(this, new NativeTypesFeature().MetadataTypesConfig)
+                ? typeMetadata.GetMetadataTypes(httpReq, typesConfig)
+                : new MetadataTypesGenerator(this, typesConfig)
                     .GetMetadataTypes(httpReq);
 
             var types = new List<MetadataType>();
@@ -331,7 +340,7 @@ namespace ServiceStack.Host
                 AddReferencedTypes(resType, metadataTypes, types);
             }
 
-            var generator = new CSharpGenerator(new NativeTypesFeature().MetadataTypesConfig);
+            var generator = new CSharpGenerator(typesConfig);
             types.Each(x =>
             {
                 x.DisplayType = x.DisplayType ?? generator.Type(x.Name, x.GenericArgs);
@@ -348,7 +357,10 @@ namespace ServiceStack.Host
             {
                 var type = FindMetadataType(metadataTypes, metadataType.Inherits.Name, metadataType.Inherits.Namespace);
                 if (type != null && !types.Contains(type))
+                {
                     types.Add(type);
+                    AddReferencedTypes(type, metadataTypes, types);
+                }
 
                 if (!metadataType.Inherits.GenericArgs.IsEmpty())
                 {
@@ -356,7 +368,10 @@ namespace ServiceStack.Host
                     {
                         type = FindMetadataType(metadataTypes, arg);
                         if (type != null && !types.Contains(type))
+                        {
                             types.Add(type);
+                            AddReferencedTypes(type, metadataTypes, types);
+                        }
                     }
                 }
             }
@@ -418,8 +433,10 @@ namespace ServiceStack.Host
             if (resType != null)
                 return resType.Response;
 
-            return metadataTypes.Types.FirstOrDefault(x => x.Name == name
+            var type = metadataTypes.Types.FirstOrDefault(x => x.Name == name
                 && (@namespace == null || x.Namespace == @namespace));
+
+            return type;
         }
     }
 
@@ -464,35 +481,24 @@ namespace ServiceStack.Host
             Flash = flash;
         }
 
-        public List<Type> GetAllTypes()
+        public List<string> GetReplyOperationNames(Format format, HashSet<Type> soapTypes)
         {
-            var allTypes = new List<Type>(Metadata.RequestTypes);
-            allTypes.AddRange(Metadata.ResponseTypes);
-            return allTypes;
-        }
-
-        public List<string> GetReplyOperationNames(Format format)
-        {
-            var feature = format.ToFeature();
             return Metadata.OperationsMap.Values
                 .Where(x => HostContext.Config != null
                     && HostContext.MetadataPagesConfig.CanAccess(format, x.Name))
                 .Where(x => !x.IsOneWay)
-                .Where(x => !x.RequestType.AllAttributes<ExcludeAttribute>()
-                    .Any(attr => attr.Feature.HasFlag(feature)))
+                .Where(x => soapTypes.Contains(x.RequestType))
                 .Select(x => x.RequestType.GetOperationName())
                 .ToList();
         }
 
-        public List<string> GetOneWayOperationNames(Format format)
+        public List<string> GetOneWayOperationNames(Format format, HashSet<Type> soapTypes)
         {
-            var feature = format.ToFeature();
             return Metadata.OperationsMap.Values
                 .Where(x => HostContext.Config != null
                     && HostContext.MetadataPagesConfig.CanAccess(format, x.Name))
                 .Where(x => x.IsOneWay)
-                .Where(x => !x.RequestType.AllAttributes<ExcludeAttribute>()
-                    .Any(attr => attr.Feature.HasFlag(feature)))
+                .Where(x => soapTypes.Contains(x.RequestType))
                 .Select(x => x.RequestType.GetOperationName())
                 .ToList();
         }
@@ -577,7 +583,7 @@ namespace ServiceStack.Host
 
             var isRequest = type.Name == op.RequestType.Name;
 
-            return !isRequest ? "body" : GetRequestParamType(op, prop.Name);
+            return !isRequest ? "form" : GetRequestParamType(op, prop.Name);
         }
 
         public static string GetParamType(this ApiMemberAttribute attr, Type type, string verb)
@@ -589,7 +595,7 @@ namespace ServiceStack.Host
             var isRequestType = op != null;
 
             var defaultType = verb == HttpMethods.Post || verb == HttpMethods.Put
-                ? "body"
+                ? "form"
                 : "query";
 
             return !isRequestType ? defaultType : GetRequestParamType(op, attr.Name, defaultType);

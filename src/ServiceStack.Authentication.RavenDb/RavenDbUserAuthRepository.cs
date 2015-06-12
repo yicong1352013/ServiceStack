@@ -52,7 +52,7 @@ namespace ServiceStack.Authentication.RavenDb
                         Search = new[] { user.UserName, user.Email }
                     };
 
-                Index(x => x.Search, FieldIndexing.Analyzed);
+                Index(x => x.Search, FieldIndexing.NotAnalyzed);
             }
         }
 
@@ -117,7 +117,7 @@ namespace ServiceStack.Authentication.RavenDb
 
             AssertNoExistingUser(newUser);
 
-            var saltedHash = new SaltedHash();
+            var saltedHash = HostContext.Resolve<IHashProvider>();
             string salt;
             string hash;
             saltedHash.GetHashAndSaltString(password, out hash, out salt);
@@ -165,7 +165,7 @@ namespace ServiceStack.Authentication.RavenDb
             var salt = existingUser.Salt;
             if (password != null)
             {
-                var saltedHash = new SaltedHash();
+                var saltedHash = HostContext.Resolve<IHashProvider>();
                 saltedHash.GetHashAndSaltString(password, out hash, out salt);
             }
             // If either one changes the digest hash has to be recalculated
@@ -200,7 +200,7 @@ namespace ServiceStack.Authentication.RavenDb
             {
                 var userAuth = session.Query<UserAuth_By_UserNameOrEmail.Result, UserAuth_By_UserNameOrEmail>()
                        .Customize(x => x.WaitForNonStaleResultsAsOfNow())
-                       .Search(x => x.Search, userNameOrEmail)
+                       .Where(x => x.Search.Contains(userNameOrEmail))
                        .OfType<TUserAuth>()
                        .FirstOrDefault();
 
@@ -214,7 +214,7 @@ namespace ServiceStack.Authentication.RavenDb
             userAuth = GetUserAuthByUserName(userName);
             if (userAuth == null) return false;
 
-            var saltedHash = new SaltedHash();
+            var saltedHash = HostContext.Resolve<IHashProvider>();
             if (saltedHash.VerifyHashString(password, userAuth.PasswordHash, userAuth.Salt))
             {
                 //userId = userAuth.Id.ToString(CultureInfo.InvariantCulture);
